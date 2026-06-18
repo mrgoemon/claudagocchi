@@ -555,11 +555,7 @@ def animate(color=True, fps=10, name="kh"):
     cur_stats = list(STATS)
     gift_queue = []                               # gifts waiting to be SHOWN (one at a time)
     pending = _boot_wave(pos["x"], ground, fps)   # one-hand wave + 1s cooldown, every launch
-
-    # === TEMP DEMO (remove me): queue a feast — it plays right after the boot wave.
-    gift_queue.append(({"tier": 3, "name": "feast", "demo": True},
-                       "a feast?! you spoil me <3", None))
-    # === end TEMP DEMO ===
+    commit_seen = None                            # SHAs already gifted (None = baseline first)
 
     sys.stdout.write("\033[?25l")
     try:
@@ -583,16 +579,17 @@ def animate(color=True, fps=10, name="kh"):
                 mood_box["happiness"] = state["happiness"]
                 mood_box["hour"] = datetime.datetime.now().hour
                 mood_box["has_hoard"] = bool(cs.hoard_summary(state).get("count"))
-                if events:
-                    recent_until = now + 30           # "recent commit" window for cheering
                 mood_box["recent_commit"] = now < recent_until
                 strk = cs.streak(repos, author)
                 cur_stats = cs.stat_lines(state, quests, today, pr_stats_box["v"], strk)
                 if strk in MILESTONES and strk not in state.setdefault("celebrated_ms", []):
                     state["celebrated_ms"].append(strk)         # arm the milestone dance, once
                     mood_box["milestone_ready"] = True
-                for g in cs.detect_gifts(state, repos, author, now):  # did you just push?
-                    gift_queue.append((g, cs.gift_speech(g), None))
+                cgifts, commit_seen = cs.detect_commit_gifts(repos, author, commit_seen)
+                for g in cgifts:                                      # every commit -> a gift
+                    gift_queue.append((g, cs.commit_gift_speech(g), None))
+                if cgifts:
+                    recent_until = now + 30                           # window for cheering
                 if not pending and not gift_queue and (events or fresh):
                     pending = _celebrate(pos["x"], ground)
                     temp_speech, temp_until = cs.speech(state, mood, events, fresh, False, name), now + 4

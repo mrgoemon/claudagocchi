@@ -156,22 +156,8 @@ def tick(state, repos, now=None):
         state["session_start"] = now
         state["last_break"] = now
 
-    events, new_commits, merged = [], 0, False
-    for repo in repos:
-        info = _head(repo)
-        prev = state["seen"].get(repo)
-        if prev is not None and info["count"] > prev.get("count", info["count"]):
-            new_commits += info["count"] - prev["count"]
-            merged = merged or info["merge"]
-        state["seen"][repo] = {"head": info["head"], "count": info["count"]}
-
-    if new_commits:
-        state["hunger"]    = max(0.0, state["hunger"] - FEED_PER_COMMIT * new_commits)
-        state["happiness"] = min(100.0, state["happiness"] + HAPPY_PER_COMMIT * new_commits)
-        events.append("merge" if merged else "commit")
-
     state["last_seen"] = now
-    return events
+    return []                              # commits now feed via per-commit gifts
 
 # --- derived: mood, quests, break -------------------------------------------
 def day_mood(state, today, now=None):
@@ -372,6 +358,52 @@ def gift_speech(gift):
         3: f"{gift['label']}?!{pr} you spoil me <3",
         4: f"{gift['label']}...{pr} you made all this for me",
     }.get(gift["tier"], "for me? thank you!")
+
+def detect_commit_gifts(repos, author, seen):
+    """Every new commit you make becomes a gift, sized by that commit's net lines.
+    `seen` is an in-memory set of SHAs already handled — pass None on the first
+    call to baseline (so existing commits don't all retro-fire). Returns
+    (gifts, seen)."""
+    found = []                                       # (sha, net_lines)
+    args = ["log", "--all", "--since", "20 minutes ago", "--no-merges",
+            "--numstat", "--pretty=tformat:__C__%H"]
+    if author:
+        args += ["--author", author]
+    for repo in repos:
+        sha, add, rem = None, 0, 0
+        for line in _git(repo, *args).splitlines():
+            if line.startswith("__C__"):
+                if sha is not None:
+                    found.append((sha, max(0, add - rem)))
+                sha, add, rem = line[5:], 0, 0
+            else:
+                p = line.split("\t")
+                if len(p) >= 2 and p[0].isdigit():
+                    add += int(p[0]); rem += int(p[1]) if p[1].isdigit() else 0
+        if sha is not None:
+            found.append((sha, max(0, add - rem)))
+
+    if seen is None:                                 # first call: baseline, don't fire
+        return [], {sha for sha, _ in found}
+    gifts = []
+    for sha, net in found:
+        if sha not in seen:
+            seen.add(sha)
+            idx = gift_tier(net, has_pr=False)
+            gifts.append({"net": net, "gross": net, "commits": 1, "pr": False,
+                          "tier": idx, "name": GIFT_TIERS[idx][1],
+                          "label": GIFT_TIERS[idx][2], "source": "commit", "sha": sha})
+    return gifts, seen
+
+def commit_gift_speech(gift):
+    n = gift["net"]
+    return {
+        0: f"+{n} lines — a nibble, thanks!",
+        1: f"+{n} lines! {gift['label']} *munch*",
+        2: f"+{n} lines! {gift['label']}, nice!",
+        3: f"+{n} lines?! {gift['label']}! you spoil me",
+        4: f"+{n} lines!! {gift['label']}! *happy tears*",
+    }.get(gift["tier"], f"+{n} lines, thank you!")
 
 def hoard_summary(state):
     return state.get("hoard", {"count": 0, "net": 0, "by_tier": {}})
