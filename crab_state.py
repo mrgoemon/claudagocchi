@@ -100,8 +100,8 @@ def _midnight():
 def today_stats(repos, author=None):
     """Commits + lines added/removed today, across repos, optionally by author."""
     commits = added = removed = 0
-    args = ["log", "--since", _midnight(), "--no-merges", "--numstat",
-            "--pretty=tformat:__C__"]
+    args = ["log", "--all", "--since", _midnight(), "--no-merges", "--numstat",
+            "--pretty=tformat:__C__"]                  # --all: every branch, not just HEAD
     if author:
         args += ["--author", author]
     for repo in repos:
@@ -118,7 +118,7 @@ def today_stats(repos, author=None):
 def streak(repos, author=None):
     """Consecutive days (ending today or yesterday) with at least one commit."""
     days = set()
-    args = ["log", "--since", "70 days ago", "--date=short", "--pretty=%ad"]
+    args = ["log", "--all", "--since", "70 days ago", "--date=short", "--pretty=%ad"]
     if author:
         args += ["--author", author]
     for repo in repos:
