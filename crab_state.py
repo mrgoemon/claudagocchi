@@ -489,10 +489,11 @@ TIER_GLYPH = ["·", "◦", "~", "✦", "◆"]   # hoard-pile marks: crumb, shell
 TIER_EMOJI = ["🍪", "🐚", "🐟", "🍱", "💎"]  # the loose gift drop (clearer than the marks)
 
 def hoard_glyphs(hoard, cap=10):
-    """Up to `cap` glyphs for the pile, rarest tier first so treasures show."""
+    """Up to `cap` glyphs for the pile, rarest tier first so treasures show.
+    Crumbs (tier 0) are omitted — too small to be worth a spot in the pile."""
     by = hoard.get("by_tier", {})
     out = []
-    for idx in range(len(GIFT_TIERS) - 1, -1, -1):
+    for idx in range(len(GIFT_TIERS) - 1, 0, -1):       # 4..1, skipping tier 0 (crumb)
         for _ in range(by.get(GIFT_TIERS[idx][1], 0)):
             out.append((TIER_GLYPH[idx], idx))
             if len(out) >= cap:
