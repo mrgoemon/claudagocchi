@@ -32,6 +32,9 @@ like you're building something *for someone*.
   **hoard**. Bigger work = bigger gift (crumb → shell → fish → feast → treasure).
 - **Quests & nudges** — small daily goals and a gentle "let's stretch" after a
   long session.
+- **Chat** — type at the bottom of the window and the crab talks back (Claude API).
+  Needs `pip install anthropic` and `ANTHROPIC_API_KEY`; otherwise chat just stays
+  off and everything else works.
 
 ## Install
 

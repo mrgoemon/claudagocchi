@@ -28,6 +28,7 @@ import threading
 import queue
 
 import crab_state as cs
+import crab_chat as cc
 
 CORAL = (200, 126, 95)
 EYE   = (24, 24, 28)
@@ -93,6 +94,32 @@ def crab_rows(color=True, **frame):
 
 def _term_width(default=80):
     return shutil.get_terminal_size((default, 24)).columns
+
+def _handle_keys(buf, data):
+    """Fold a chunk of raw stdin into the chat buffer. Returns (buffer, submit)
+    where submit is the line on Enter, else None."""
+    if data[:1] == b"\x1b":                 # ESC: lone = clear, sequence (arrows) = ignore
+        return ("", None) if len(data) == 1 else (buf, None)
+    submit = None
+    for ch in data.decode("utf-8", "ignore"):
+        o = ord(ch)
+        if ch in ("\r", "\n"):
+            submit, buf = buf, ""
+        elif o in (8, 127):                 # backspace
+            buf = buf[:-1]
+        elif o >= 32:
+            buf += ch
+    return buf, submit
+
+def _input_line(buf, inner, color, ok):
+    """The chat input row drawn under the box."""
+    if not ok:
+        s = "  chat: set ANTHROPIC_API_KEY + `pip install anthropic`"
+    else:
+        shown = buf[-(inner - 4):] if len(buf) > inner - 4 else buf
+        s = ("  › " + shown + "▏") if buf else "  › talk to me… (type, Enter to send)"
+    s = s[:inner + 2]
+    return (fg((150, 150, 160)) + s + RESET) if color else s
 
 def _vlen(s):
     """Visible width in terminal columns (full-width CJK glyphs count as 2)."""
@@ -557,6 +584,22 @@ def animate(color=True, fps=10, name="kh"):
     gift_queue = []                               # gifts waiting to be SHOWN (one at a time)
     pending = _boot_wave(pos["x"], ground, fps)   # one-hand wave + 1s cooldown, every launch
     commit_seen = None                            # SHAs already gifted (None = baseline first)
+    today, strk = {"added": 0, "commits": 0}, 0   # until the first poll fills them in
+
+    # --- chat: read the keyboard (raw mode) and talk to Claude on a worker thread
+    import select, termios, tty
+    chat_q = queue.Queue()
+    chat_buf, chat_history = "", []
+    chat_ok = sys.stdin.isatty() and cc.available()
+    fd, old_term = None, None
+    if sys.stdin.isatty():
+        try:
+            fd = sys.stdin.fileno()
+            old_term = termios.tcgetattr(fd)
+            tty.setcbreak(fd)                      # keys arrive immediately; Ctrl-C still works
+        except Exception:
+            fd, old_term = None, None              # not a real tty -> no keyboard input
+    n += 1                                          # the input line drawn under the box
 
     sys.stdout.write("\033[?25l")
     try:
@@ -568,6 +611,10 @@ def animate(color=True, fps=10, name="kh"):
                 if key in gifted or any(k == key for _, _, k in gift_queue):
                     continue
                 gift_queue.append((g, cs.pr_speech(g), key))
+            while not chat_q.empty():             # --- the crab's chat reply landed
+                reply = chat_q.get()
+                chat_history.append({"role": "assistant", "content": reply})
+                temp_speech, temp_until = reply, now + max(5.0, len(reply) / TYPE_CPS + 3)
             if i % poll_every == 0:               # --- poll: vitals, git, reactions
                 events = cs.tick(state, repos, now)
                 today = cs.today_stats(repos, author)
@@ -631,16 +678,38 @@ def animate(color=True, fps=10, name="kh"):
             win = render_window(color, stage_h=stage_h, x=x, y=y, frame=frame,
                                 speech=bubble, stats=cur_stats, hoard=hoard_g,
                                 drop=drop, emote=emote)
+            win += "\n" + _input_line(chat_buf, inner, color, chat_ok)
             if not first:
                 sys.stdout.write(f"\033[{n}A")
             sys.stdout.write("".join("\r" + ln + "\033[K\n" for ln in win.split("\n")))
             sys.stdout.flush()
             first, i = False, i + 1
-            time.sleep(delay)
+
+            # --- wait one frame; meanwhile read the keyboard (non-blocking)
+            if fd is not None:
+                r, _, _ = select.select([sys.stdin], [], [], delay)
+                if r:
+                    chat_buf, submit = _handle_keys(chat_buf, os.read(fd, 256))
+                    if submit and submit.strip():
+                        if not chat_ok:
+                            temp_speech, temp_until = "(set ANTHROPIC_API_KEY to chat!)", now + 5
+                        else:
+                            chat_history.append({"role": "user", "content": submit.strip()})
+                            del chat_history[:-10]              # keep recent turns only
+                            temp_speech, temp_until = "hmm…", now + 60
+                            vit = {"belly": 100 - state["hunger"], "energy": state["energy"],
+                                   "lines": today.get("added", 0), "commits": today.get("commits", 0),
+                                   "streak": strk, "name": name}
+                            threading.Thread(target=lambda h=list(chat_history):
+                                             chat_q.put(cc.ask(h, vit)), daemon=True).start()
+            else:
+                time.sleep(delay)
     except KeyboardInterrupt:
         pass
     finally:
         cs.save_state(state)
+        if old_term is not None:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_term)
         sys.stdout.write("\033[?25h")
         sys.stdout.flush()
 
