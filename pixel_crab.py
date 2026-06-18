@@ -579,7 +579,7 @@ def animate(color=True, fps=10, name="kh"):
     idle_next = time.time() + GREET_SEC
     temp_speech, temp_until = "", 0.0             # transient gift/event/break lines
     recent_until = 0.0                            # window after a commit (for cheering)
-    type_text, type_start, TYPE_CPS = "", 0.0, 9.0    # bubble typewriter state (chars/sec)
+    type_text, type_start, TYPE_CPS = "", 0.0, 13.0   # bubble typewriter state (chars/sec)
     cur_stats = list(STATS)
     gift_queue = []                               # gifts waiting to be SHOWN (one at a time)
     pending = _boot_wave(pos["x"], ground, fps)   # one-hand wave + 1s cooldown, every launch
