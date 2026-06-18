@@ -6,7 +6,7 @@ package installed; chat just stays disabled until it's available + a key is set.
 """
 import os
 
-MODEL = "claude-opus-4-8"          # default per Claude API guidance
+MODEL = "claude-haiku-4-5"         # cheap + fast, plenty for short crab chit-chat
 NAME = "kh"
 
 def available():
