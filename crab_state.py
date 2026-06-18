@@ -28,17 +28,16 @@ STATE = DIR / "state.json"
 CONFIG = DIR / "config.json"
 
 # --- tuning knobs (per hour unless noted) -----------------------------------
-HUNGER_PER_HR = 10.0      # hunger climbs (0 = full, 100 = starving)
-ENERGY_PER_HR = 5.0       # energy falls over time
-HAPPY_PER_HR  = 6.0       # happiness fades when you're away
-FEED_PER_COMMIT  = 22     # hunger removed per new commit
+HUNGER_PER_HR = 30.0      # belly empties (0 = full, 100 = starving); visible over a session
+COUPLE_PER_HR = 0.6       # how fast energy & mood drift toward the current belly level
+FEED_PER_COMMIT  = 22     # hunger removed per new commit (refills the belly)
 HAPPY_PER_COMMIT = 12
-ENERGY_PER_COMMIT = -3    # coding tires it out a touch
 BREAK_AFTER_MIN = 50      # nudge to stretch after this much unbroken time
 IDLE_RESET_MIN = 90       # a gap this long starts a fresh work session
 MARATHON_MIN = 180        # session longer than this -> "tired"
 
 def _now(): return time.time()
+def _clamp(v, lo=0.0, hi=100.0): return max(lo, min(hi, v))
 
 # --- persistence ------------------------------------------------------------
 def _load(path, default):
@@ -146,14 +145,16 @@ def tick(state, repos, now=None):
     commits. Returns a list of fired events (e.g. ['commit'] or ['merge'])."""
     now = now or _now()
     hrs = max(0.0, (now - state["last_seen"]) / 3600.0)
-    state["hunger"]    = min(100.0, state["hunger"] + HUNGER_PER_HR * hrs)
-    state["energy"]    = max(0.0, state["energy"] - ENERGY_PER_HR * hrs)
-    state["happiness"] = max(0.0, state["happiness"] - HAPPY_PER_HR * hrs)
+
+    state["hunger"] = min(100.0, state["hunger"] + HUNGER_PER_HR * hrs)   # belly empties
+    belly = 100.0 - state["hunger"]
+    pull = min(1.0, COUPLE_PER_HR * hrs)                  # energy & mood drift toward belly:
+    state["energy"]    = _clamp(state["energy"] + (belly - state["energy"]) * pull)      # full
+    state["happiness"] = _clamp(state["happiness"] + (belly - state["happiness"]) * pull)  # -> up
 
     if (now - state["last_seen"]) / 60.0 > IDLE_RESET_MIN:   # came back after a break
         state["session_start"] = now
         state["last_break"] = now
-        state["energy"] = min(100.0, state["energy"] + 40)   # rested
 
     events, new_commits, merged = [], 0, False
     for repo in repos:
@@ -167,7 +168,6 @@ def tick(state, repos, now=None):
     if new_commits:
         state["hunger"]    = max(0.0, state["hunger"] - FEED_PER_COMMIT * new_commits)
         state["happiness"] = min(100.0, state["happiness"] + HAPPY_PER_COMMIT * new_commits)
-        state["energy"]    = max(0.0, state["energy"] + ENERGY_PER_COMMIT * new_commits)
         events.append("merge" if merged else "commit")
 
     state["last_seen"] = now
@@ -454,7 +454,8 @@ def pr_speech(gift):
         4: f"PR{tag}... {gift['label']} this big, for me? *tears*",
     }.get(gift["tier"], "you opened a PR! thank you!")
 
-TIER_GLYPH = ["·", "◦", "~", "✦", "◆"]   # crumb, shell, fish, feast, treasure
+TIER_GLYPH = ["·", "◦", "~", "✦", "◆"]   # hoard-pile marks: crumb, shell, fish, feast, treasure
+TIER_EMOJI = ["🍪", "🐚", "🐟", "🍱", "💎"]  # the loose gift drop (clearer than the marks)
 
 def hoard_glyphs(hoard, cap=10):
     """Up to `cap` glyphs for the pile, rarest tier first so treasures show."""

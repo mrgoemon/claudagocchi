@@ -23,6 +23,7 @@ import shutil
 import random
 import unicodedata
 import os
+import datetime
 import threading
 import queue
 
@@ -153,7 +154,7 @@ def _place(inner, items):
     return "".join(out)
 
 def render_window(color=True, stage_h=3, x=None, y=0, frame=None,
-                  speech=None, stats=None, hoard=None, drop=None) -> str:
+                  speech=None, stats=None, hoard=None, drop=None, emote=None) -> str:
     """Draw the window with the crab sprite placed at (x, y) on a stage_h-tall
     stage. `speech`/`stats` override the static placeholders when live;
     `hoard` is a list of (glyph, tier) drawn as a pile in the bottom-right;
@@ -174,9 +175,8 @@ def render_window(color=True, stage_h=3, x=None, y=0, frame=None,
         if r == ground_row:                          # crab legs + loose gift + hoard pile
             items = [crab_seg] if crab_seg else []   # crab has priority
             if drop:
-                dcol, dch, dt = drop
-                ds = (fg(HOARD_COLOR[dt]) + dch + RESET) if color else dch
-                items.append((dcol, ds, len(dch)))
+                dcol, dch, dt = drop                 # gift drop is an emoji (self-colored,
+                items.append((dcol, dch, _vlen(dch)))  # and double-width, so measure it)
             if hoard:
                 items.append((inner - len(hoard) - 1, _render_hoard(hoard, color), len(hoard)))
             stage.append(_place(inner, items))
@@ -185,6 +185,12 @@ def render_window(color=True, stage_h=3, x=None, y=0, frame=None,
             stage.append(" " * col + s + " " * max(inner - col - w, 0))
         else:
             stage.append(" " * inner)
+
+    if emote and 0 <= y - 1 < stage_h:               # a small glyph above the crab's head
+        ew = _vlen(emote)
+        ecol = min(max(x + WIDTH // 2, 0), inner - ew)
+        es = (fg((150, 150, 160)) + emote + RESET) if color else emote
+        stage[y - 1] = _place(inner, [(ecol, es, ew)])
 
     # Border, drawn entirely in coral (same as the Claudagocchi title).
     co = (lambda s: fg(CORAL) + s + RESET) if color else (lambda s: s)
@@ -216,6 +222,48 @@ MOOD_WEIGHTS = {                # mood biases which idle actions are likely
     "okay":      [5, 3, 2, 2, 1],
 }
 
+def action_weights(ctx):
+    """Likelihood of each action from mood + energy + belly + time of day.
+    Returns {action_name: weight}. (Actions without a branch yet fall back to a
+    calm loaf, so it's safe for weights to lead the implementation.)"""
+    mood  = ctx.get("mood", "okay")
+    e     = max(0.0, min(1.0, ctx.get("energy", 80) / 100.0))
+    belly = ctx.get("belly", 60)
+    happy = ctx.get("happiness", 60)
+    hour  = ctx.get("hour", 12)
+    night  = hour >= 23 or hour < 6
+    hungry = belly < 35
+    sad    = happy < 30
+    recent = ctx.get("recent_commit", False)
+    hoard  = ctx.get("has_hoard", False)
+    base   = MOOD_WEIGHTS.get(mood, MOOD_WEIGHTS["okay"])   # [sit,saunter,stretch,groom,pounce]
+    w = {
+        "sit":        base[0] + (1 - e) * 5,
+        "saunter":    base[1] * (0.3 + e),
+        "stretch":    base[2] * (0.3 + e),
+        "groom":      base[3],
+        "pounce":     base[4] * e * 1.5,
+        "lookaround": 2.0,
+        "dig":        1.5 * (0.3 + e),
+        "bubble":     1.2,
+        "wiggle":     (3.0 if (mood in ("energetic", "content") and not hungry) else 0.4) * (0.4 + e),
+        "yawn":       3.0 if (e < 0.4 or night) else 0.4,
+        "preen":      1.5,
+        "foottap":    2.5 if hungry else 0.6,
+        "beg":        5.0 if hungry else 0.0,
+        "hungrypace": 4.0 if hungry else 0.0,
+        "sadslump":   4.0 if sad else 0.0,
+        "doze":       5.0 if e < 0.22 else (2.0 if night else 0.0),
+        "dash":       (3.0 if mood == "energetic" else 0.4) * e,
+        "cheer":      4.0 if recent else 0.0,
+        "visithoard": 2.0 if hoard else 0.0,
+        "nightowl":   3.0 if night else 0.0,
+        "milestone":  100.0 if ctx.get("milestone_ready") else 0.0,   # triggered, jumps the queue
+    }
+    return {k: max(0.0, v) for k, v in w.items()}
+
+MILESTONES = {3, 7, 14, 21, 30, 50, 100, 200, 365}   # streak days worth a party
+
 def crab_bounds(inner, right_pad=0):
     """The left/right columns the crab may stand at (clear of walls + hoard)."""
     maxx = inner - WIDTH
@@ -242,49 +290,162 @@ def behaviors(inner, stage_h, mood_box=None, right_pad=0, pos=None):
         pos["x"] = max(lo, min(hi, nx))
         return d
 
-    # On boot, always greet with a hand wave before settling into idle behavior.
-    for i in range(8):
-        yield pos["x"], ground, pose(hand="walkA" if i % 2 else "walkB")
-
+    # Frames are 4-tuples (x, y, frame, emote) — emote is a small glyph drawn above
+    # the crab's head (or None).
     while True:
-        mood = (mood_box or {}).get("mood", "okay")
-        action = random.choices(
-            ACTIONS, weights=MOOD_WEIGHTS.get(mood, MOOD_WEIGHTS["okay"]))[0]
+        ctx = mood_box or {}
+        w = action_weights(ctx)
+        action = random.choices(list(w), weights=list(w.values()))[0]
 
-        if action == "sit":                          # loaf, with the occasional blink
-            n = random.randint(10, 22)
-            blink_at = random.randint(2, max(2, n - 4))   # one short blink, mid-action
-            for i in range(n):
-                closed = blink_at <= i < blink_at + 2     # 2 frames, kept off the edges
-                yield pos["x"], ground, pose(eye_open=not closed)
-
-        elif action == "saunter":                    # slow stroll: legs step, hands stay
+        if action == "saunter":                      # slow stroll: legs step, hands stay
             d = random.choice([-1, 1])               # put, eyes glance the way it walks
             for i in range(random.randint(8, 16)):
                 if i % 2 == 0:
                     d = step_x(d)
                 yield pos["x"], ground, pose(hand="down", gaze=d,
-                                             leg="stepA" if i % 2 else "stepB")
+                                             leg="stepA" if i % 2 else "stepB"), None
 
         elif action == "stretch":                    # big slow stretch, then settle
-            yield pos["x"], ground, pose(hand="up", leg="stepA")
+            yield pos["x"], ground, pose(hand="up", leg="stepA"), None
             for _ in range(random.randint(5, 8)):
-                yield pos["x"], ground, pose(hand="up")
-            yield pos["x"], ground, pose(hand="up", leg="squat")
+                yield pos["x"], ground, pose(hand="up"), None
+            yield pos["x"], ground, pose(hand="up", leg="squat"), None
 
         elif action == "groom":                      # paw flicks at the face
             for i in range(random.randint(6, 12)):
                 yield pos["x"], ground, pose(hand="walkA" if i % 2 else "down",
-                                             eye_open=(i % 4 != 0))
+                                             eye_open=(i % 4 != 0)), None
 
         elif action == "pounce":                     # rare: wiggle, then leap
             for _ in range(3):
-                yield pos["x"], ground, pose(leg="squat")
+                yield pos["x"], ground, pose(leg="squat"), None
             for yy in (ground - 1, ground - 2, ground - 2):
-                yield pos["x"], max(yy, 0), pose(hand="up", leg="tuck")
-            yield pos["x"], ground - 1, pose(leg="tuck")
-            yield pos["x"], ground, pose(leg="squat")
-            yield pos["x"], ground, pose(leg="rest")
+                yield pos["x"], max(yy, 0), pose(hand="up", leg="tuck"), None
+            yield pos["x"], ground - 1, pose(leg="tuck"), None
+            yield pos["x"], ground, pose(leg="squat"), None
+            yield pos["x"], ground, pose(leg="rest"), None
+
+        elif action == "lookaround":                 # glance left, then right, curious
+            for g, hold in [(-1, 4), (0, 2), (1, 4), (0, 3)]:
+                for _ in range(hold):
+                    yield pos["x"], ground, pose(gaze=g), None
+
+        elif action == "dig":                        # paw at the ground
+            for i in range(random.randint(8, 12)):
+                yield pos["x"], ground, pose(hand="walkA" if i % 2 else "walkB",
+                                             leg="squat" if i % 2 else "stepA"), None
+
+        elif action == "bubble":                     # blow a bubble that grows, then pops
+            for em in ("˚", "°", "○", "°", None):
+                for _ in range(3):
+                    yield pos["x"], ground, pose(), em
+
+        elif action == "wiggle":                     # happy little dance
+            for i in range(random.randint(8, 12)):
+                yield pos["x"], ground, pose(hand="up", gaze=1 if i % 2 else -1,
+                                             leg="stepA" if i % 2 else "stepB"), None
+
+        elif action == "yawn":                        # arms up, eyes squeeze shut, settle
+            yield pos["x"], ground, pose(hand="up", leg="stepA"), None
+            for _ in range(4):
+                yield pos["x"], ground, pose(hand="up", eye_open=False), None
+            for _ in range(3):
+                yield pos["x"], ground, pose(eye_open=False), None
+            yield pos["x"], ground, pose(), None
+
+        elif action == "preen":                       # raise a claw and tidy it
+            for i in range(random.randint(7, 11)):
+                yield pos["x"], ground, pose(hand="walkA", gaze=-1, eye_open=(i % 3 != 0)), None
+
+        elif action == "foottap":                     # tap a foot, impatient
+            for i in range(random.randint(10, 16)):
+                yield pos["x"], ground, pose(leg="stepA" if i % 2 else "rest"), None
+
+        elif action == "beg":                         # "feed me!" — both claws up at you
+            for i in range(random.randint(9, 13)):
+                em = "!" if i % 4 < 2 else None
+                yield pos["x"], ground, pose(hand="up", gaze=0,
+                                             leg="squat" if i % 2 else "rest"), em
+
+        elif action == "hungrypace":                  # restless pacing, glancing about
+            d = random.choice([-1, 1])
+            for i in range(random.randint(12, 18)):
+                d = step_x(d)
+                yield pos["x"], ground, pose(hand="down", gaze=d,
+                                             leg="stepA" if i % 2 else "stepB"), None
+
+        elif action == "sadslump":                    # droop, eyes low
+            for i in range(random.randint(10, 16)):
+                yield pos["x"], ground, pose(eye_open=(i % 6 == 0), hand="down", leg="squat"), None
+
+        elif action == "doze":                        # curl up, z z z (only when sleepy)
+            for i in range(random.randint(14, 20)):
+                yield pos["x"], ground, pose(eye_open=False, leg="tuck"), ("z" if i % 4 == 0 else None)
+            yield pos["x"], ground, pose(leg="squat"), None      # stir
+            yield pos["x"], ground, pose(), None                 # wake
+
+        elif action == "dash":                        # energetic zip + a victory hop
+            d = random.choice([-1, 1])
+            for i in range(random.randint(8, 14)):
+                d = step_x(d)
+                yield pos["x"], ground, pose(hand="up", gaze=d,
+                                             leg="stepA" if i % 2 else "stepB"), None
+            yield pos["x"], max(ground - 1, 0), pose(hand="up", leg="tuck"), None
+            yield pos["x"], ground, pose(leg="squat"), None
+            yield pos["x"], ground, pose(), None
+
+        elif action == "cheer":                       # fist-pump, "you got this!"
+            for i in range(random.randint(8, 12)):
+                yield pos["x"], ground, pose(hand="up" if i % 2 else "down", gaze=0), \
+                      ("!" if i % 3 == 0 else None)
+
+        elif action == "visithoard":                  # stroll to the pile and admire it
+            for _ in range(inner):
+                if pos["x"] >= hi:
+                    break
+                step_x(1)
+                yield pos["x"], ground, pose(hand="down", gaze=1,
+                                             leg="stepA" if pos["x"] % 2 else "stepB"), None
+            for i in range(random.randint(6, 10)):
+                yield pos["x"], ground, pose(hand="up", gaze=1, leg="rest"), \
+                      ("♥" if i % 3 == 0 else None)
+            for _ in range(random.randint(4, 8)):
+                step_x(-1)
+                yield pos["x"], ground, pose(hand="down", gaze=-1,
+                                             leg="stepA" if pos["x"] % 2 else "stepB"), None
+
+        elif action == "nightowl":                    # late-night yawn into a doze
+            yield pos["x"], ground, pose(hand="up", leg="stepA"), None
+            for _ in range(3):
+                yield pos["x"], ground, pose(hand="up", eye_open=False), None
+            for i in range(random.randint(10, 16)):
+                yield pos["x"], ground, pose(eye_open=False, leg="tuck"), ("z" if i % 5 == 0 else None)
+            yield pos["x"], ground, pose(), None
+
+        elif action == "milestone":                   # streak party (triggered, not random)
+            ctx["milestone_ready"] = False
+            for i in range(random.randint(12, 18)):
+                yy = max(ground - 1, 0) if i % 2 else ground
+                yield pos["x"], yy, pose(hand="up", gaze=1 if i % 4 < 2 else -1,
+                                         leg="tuck" if i % 2 else "squat"), \
+                      ("★" if i % 2 == 0 else None)
+            yield pos["x"], ground, pose(), None
+
+        else:                                        # "sit" + any not-yet-built action: loaf
+            n = random.randint(10, 22)
+            blink_at = random.randint(2, max(2, n - 4))   # one short blink, mid-action
+            for i in range(n):
+                closed = blink_at <= i < blink_at + 2
+                yield pos["x"], ground, pose(eye_open=not closed), None
+
+def _boot_wave(x, ground, fps):
+    """Launch greeting: a one-hand wave (~1s), then a ~1s still cooldown before
+    the crab starts any action."""
+    span = max(6, int(fps))
+    wave = [(x, ground, pose(hand="walkA" if i % 2 == 0 else "down"), None)  # crab's right hand
+            for i in range(span)]
+    cooldown = [(x, ground, pose(), None) for _ in range(span)]              # still, settling
+    return wave + cooldown
 
 def _celebrate(x, ground):
     """A happy in-place bounce for commits / completed quests. 4-tuples: (x,y,frame,drop)."""
@@ -386,13 +547,19 @@ def animate(color=True, fps=10, name="kh"):
     delay = 1.0 / max(fps, 1)
     poll_every = max(1, int(fps * 4))             # re-check git + vitals ~every 4s
 
-    GREET_SEC, ROTATE_SEC = 20, 300               # greet ~20s, then refresh every 5 min
+    GREET_SEC, ROTATE_SEC = 20, 180               # greet ~20s, then refresh every 3 min
     idle_speech = SPEECH                          # the Claude-style opening line first
     idle_next = time.time() + GREET_SEC
     temp_speech, temp_until = "", 0.0             # transient gift/event/break lines
+    recent_until = 0.0                            # window after a commit (for cheering)
     cur_stats = list(STATS)
-    pending = []
     gift_queue = []                               # gifts waiting to be SHOWN (one at a time)
+    pending = _boot_wave(pos["x"], ground, fps)   # one-hand wave + 1s cooldown, every launch
+
+    # === TEMP DEMO (remove me): queue a feast — it plays right after the boot wave.
+    gift_queue.append(({"tier": 3, "name": "feast", "demo": True},
+                       "a feast?! you spoil me <3", None))
+    # === end TEMP DEMO ===
 
     sys.stdout.write("\033[?25l")
     try:
@@ -411,8 +578,19 @@ def animate(color=True, fps=10, name="kh"):
                 fresh = cs.newly_completed(state, quests)
                 mood = cs.day_mood(state, today, now)
                 mood_box["mood"] = mood
-                cur_stats = cs.stat_lines(state, quests, today, pr_stats_box["v"],
-                                          cs.streak(repos, author))
+                mood_box["energy"] = state["energy"]
+                mood_box["belly"] = 100 - state["hunger"]
+                mood_box["happiness"] = state["happiness"]
+                mood_box["hour"] = datetime.datetime.now().hour
+                mood_box["has_hoard"] = bool(cs.hoard_summary(state).get("count"))
+                if events:
+                    recent_until = now + 30           # "recent commit" window for cheering
+                mood_box["recent_commit"] = now < recent_until
+                strk = cs.streak(repos, author)
+                cur_stats = cs.stat_lines(state, quests, today, pr_stats_box["v"], strk)
+                if strk in MILESTONES and strk not in state.setdefault("celebrated_ms", []):
+                    state["celebrated_ms"].append(strk)         # arm the milestone dance, once
+                    mood_box["milestone_ready"] = True
                 for g in cs.detect_gifts(state, repos, author, now):  # did you just push?
                     gift_queue.append((g, cs.gift_speech(g), None))
                 if not pending and not gift_queue and (events or fresh):
@@ -430,24 +608,25 @@ def animate(color=True, fps=10, name="kh"):
 
             if not pending and gift_queue:        # --- show a queued gift (records on show)
                 g, line, key = gift_queue.pop(0)
-                cs.record_gift(state, g); cs.feed_gift(state, g)
-                if key:
-                    gifted.add(key); state["pr_gifted"] = sorted(gifted)
+                if not g.get("demo"):             # demo gifts are purely visual
+                    cs.record_gift(state, g); cs.feed_gift(state, g)
+                    if key:
+                        gifted.add(key); state["pr_gifted"] = sorted(gifted)
+                    cs.save_state(state)
                 hoard_g = cs.hoard_glyphs(cs.hoard_summary(state))
                 pending = _gift_scene(pos, ground, inner, g["tier"],
-                                      cs.TIER_GLYPH[g["tier"]], HOARD_CAP + 1)
+                                      cs.TIER_EMOJI[g["tier"]], HOARD_CAP + 1)
                 temp_speech, temp_until = line, now + len(pending) * delay + 2
-                cs.save_state(state)
 
             if pending:
-                x, y, frame, drop = pending.pop(0)
+                x, y, frame, drop = pending.pop(0); emote = None
             else:
-                x, y, frame = next(gen)
-                drop = None
+                x, y, frame, emote = next(gen); drop = None
 
             disp = temp_speech if now < temp_until else idle_speech
             win = render_window(color, stage_h=stage_h, x=x, y=y, frame=frame,
-                                speech=disp, stats=cur_stats, hoard=hoard_g, drop=drop)
+                                speech=disp, stats=cur_stats, hoard=hoard_g,
+                                drop=drop, emote=emote)
             if not first:
                 sys.stdout.write(f"\033[{n}A")
             sys.stdout.write("".join("\r" + ln + "\033[K\n" for ln in win.split("\n")))
