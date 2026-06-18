@@ -552,6 +552,7 @@ def animate(color=True, fps=10, name="kh"):
     idle_next = time.time() + GREET_SEC
     temp_speech, temp_until = "", 0.0             # transient gift/event/break lines
     recent_until = 0.0                            # window after a commit (for cheering)
+    type_text, type_start, TYPE_CPS = "", 0.0, 28.0   # bubble typewriter state (chars/sec)
     cur_stats = list(STATS)
     gift_queue = []                               # gifts waiting to be SHOWN (one at a time)
     pending = _boot_wave(pos["x"], ground, fps)   # one-hand wave + 1s cooldown, every launch
@@ -623,8 +624,12 @@ def animate(color=True, fps=10, name="kh"):
                 x, y, frame, emote = next(gen); drop = None
 
             disp = temp_speech if now < temp_until else idle_speech
+            if disp != type_text:                 # new line -> (re)start typing it out
+                type_text, type_start = disp, now
+            typed = type_text[:int((now - type_start) * TYPE_CPS)]
+            bubble = typed + " " * max(_vlen(type_text) - _vlen(typed), 0)  # hold full width
             win = render_window(color, stage_h=stage_h, x=x, y=y, frame=frame,
-                                speech=disp, stats=cur_stats, hoard=hoard_g,
+                                speech=bubble, stats=cur_stats, hoard=hoard_g,
                                 drop=drop, emote=emote)
             if not first:
                 sys.stdout.write(f"\033[{n}A")
