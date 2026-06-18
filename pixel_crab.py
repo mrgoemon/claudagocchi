@@ -530,8 +530,8 @@ def animate(color=True, fps=10, name="kh"):
                 if key in seen:
                     continue
                 seen.add(key)
-                if p.get("state") == "OPEN":               # gift only on opening
-                    pr_q.put((key, cs.pr_gift(p)))
+                if p.get("state") == "OPEN":               # PRs are simple acknowledgements
+                    pr_q.put((key, {"number": p["number"], "ack": True}))
             time.sleep(30)
     threading.Thread(target=_pr_worker, daemon=True).start()
 
@@ -603,17 +603,19 @@ def animate(color=True, fps=10, name="kh"):
                 state["pr_cache"] = pr_stats_box["v"]     # cache for instant next launch
                 cs.save_state(state)
 
-            if not pending and gift_queue:        # --- show a queued gift (records on show)
+            if not pending and gift_queue:        # --- show a queued commit-gift or PR ack
                 g, line, key = gift_queue.pop(0)
-                if not g.get("demo"):             # demo gifts are purely visual
+                if key:                            # a PR: mark it acknowledged (once)
+                    gifted.add(key); state["pr_gifted"] = sorted(gifted)
+                if g.get("ack"):                   # PR -> quick bounce, no gift mechanics
+                    pending = _celebrate(pos["x"], ground)
+                else:                              # commit -> full gift scene + feed + hoard
                     cs.record_gift(state, g); cs.feed_gift(state, g)
-                    if key:
-                        gifted.add(key); state["pr_gifted"] = sorted(gifted)
-                    cs.save_state(state)
-                hoard_g = cs.hoard_glyphs(cs.hoard_summary(state))
-                pending = _gift_scene(pos, ground, inner, g["tier"],
-                                      cs.TIER_EMOJI[g["tier"]], HOARD_CAP + 1)
+                    hoard_g = cs.hoard_glyphs(cs.hoard_summary(state))
+                    pending = _gift_scene(pos, ground, inner, g["tier"],
+                                          cs.TIER_EMOJI[g["tier"]], HOARD_CAP + 1)
                 temp_speech, temp_until = line, now + len(pending) * delay + 2
+                cs.save_state(state)
 
             if pending:
                 x, y, frame, drop = pending.pop(0); emote = None

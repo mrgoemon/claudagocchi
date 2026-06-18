@@ -476,15 +476,14 @@ def pr_gift(pr):
             "number": pr["number"], "title": pr.get("title", "")}
 
 def pr_speech(gift):
+    """A simple acknowledgement when you open a PR (no tier / lines)."""
     n = gift.get("number")
-    tag = f" (#{n})" if n else ""
-    return {
-        0: f"you opened a PR{tag}! {gift['label']} — nice!",
-        1: f"a PR{tag}! {gift['label']} for me?",
-        2: f"you sent off a PR{tag}! {gift['label']}! *proud*",
-        3: f"a whole PR{tag} — {gift['label']}?! you spoil me <3",
-        4: f"PR{tag}... {gift['label']} this big, for me? *tears*",
-    }.get(gift["tier"], "you opened a PR! thank you!")
+    tag = f" #{n}" if n else ""
+    return random.choice([
+        f"you opened PR{tag}! nice work *",
+        f"PR{tag} is up — proud of you!",
+        f"you shipped PR{tag}! *cheers*",
+    ])
 
 TIER_GLYPH = ["·", "◦", "~", "✦", "◆"]   # hoard-pile marks: crumb, shell, fish, feast, treasure
 TIER_EMOJI = ["🍪", "🐚", "🐟", "🍱", "💎"]  # the loose gift drop (clearer than the marks)
