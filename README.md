@@ -32,9 +32,10 @@ like you're building something *for someone*.
   **hoard**. Bigger work = bigger gift (crumb → shell → fish → feast → treasure).
 - **Quests & nudges** — small daily goals and a gentle "let's stretch" after a
   long session.
-- **Chat** — type at the bottom of the window and the crab talks back (Claude API).
-  Needs `pip install anthropic` and `ANTHROPIC_API_KEY`; otherwise chat just stays
-  off and everything else works.
+- **Chat** — type at the bottom of the window and the crab talks back (Claude API,
+  Haiku by default). Enable it with `pip install anthropic` plus a key — an
+  `ANTHROPIC_API_KEY` env var *or* `crab --setkey`. Without it, chat stays off and
+  everything else works.
 
 ## Install
 
@@ -43,11 +44,13 @@ git clone <this-repo> ~/claude-crab
 ln -s ~/claude-crab/crab ~/.local/bin/crab   # or put the repo's ./crab on your PATH
 crab --watch /path/to/your/project           # track a repo (remembered globally)
 crab --me                                    # count only your commits
+pip install anthropic && crab --setkey       # optional: turn on chat (paste your key)
 crab                                         # launch the crab (Ctrl-C to stop)
 ```
 
 Requirements: **python3**, **git**, and the **GitHub CLI (`gh`)**, authenticated,
-for PR detection.
+for PR detection. Chat is optional and adds the **`anthropic`** package plus an
+API key (`crab --setkey` or an `ANTHROPIC_API_KEY` env var).
 
 ## Commands
 
@@ -58,6 +61,7 @@ for PR detection.
 | `crab --hoard` | Everything you've gifted it |
 | `crab --watch <path>` / `--unwatch <path>` / `--list` | Manage tracked repos |
 | `crab --me [email]` / `crab --me off` | Count only your commits (or everyone) |
+| `crab --setkey` | Save an Anthropic API key so the crab can chat |
 | `crab --welcome` | Static box, no live data |
 | `crab --no-color` | No coral tint |
 
@@ -69,6 +73,7 @@ for PR detection.
   quests, the speech).
 - State lives in `~/.claude-crab/` (`state.json`, `config.json`).
 
-Pure Python standard library. No dependencies.
+Pure Python standard library — no dependencies, with one exception: chat uses the
+`anthropic` package, and only when you turn it on.
 
 > `crab.py` is the original line-art prototype, kept for posterity.

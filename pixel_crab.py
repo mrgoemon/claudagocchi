@@ -130,6 +130,18 @@ def _vlen(s):
         w += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
     return w
 
+def _clip(s, width):
+    """Trim s to at most `width` visible columns, adding … if it was cut."""
+    if _vlen(s) <= width:
+        return s
+    out, w = "", 0
+    for ch in s:
+        cw = 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+        if w + cw > width - 1:
+            break
+        out += ch; w += cw
+    return out + "…"
+
 def _center_text(s, width):
     """Center s in `width` columns, accounting for full-width characters."""
     if len(s) > width:                     # safety: never overflow the box
@@ -590,6 +602,7 @@ def animate(color=True, fps=10, name="kh"):
     import select, termios, tty
     chat_q = queue.Queue()
     chat_buf, chat_history = "", []
+    chat_pending_since, BUBBLE_PAD = None, 6     # show "hmm…" only after 3s; keep bubble margins
     chat_ok = sys.stdin.isatty() and cc.available()
     fd, old_term = None, None
     if sys.stdin.isatty():
@@ -615,6 +628,7 @@ def animate(color=True, fps=10, name="kh"):
                 reply = chat_q.get()
                 chat_history.append({"role": "assistant", "content": reply})
                 temp_speech, temp_until = reply, now + max(5.0, len(reply) / TYPE_CPS + 3)
+                chat_pending_since = None         # reply is here, no need for "hmm…"
             if i % poll_every == 0:               # --- poll: vitals, git, reactions
                 events = cs.tick(state, repos, now)
                 today = cs.today_stats(repos, author)
@@ -671,6 +685,9 @@ def animate(color=True, fps=10, name="kh"):
                 x, y, frame, emote = next(gen); drop = None
 
             disp = temp_speech if now < temp_until else idle_speech
+            if chat_pending_since is not None and now - chat_pending_since > 3:
+                disp = "hmm…"                     # only after a slow reply; else keep the line
+            disp = _clip(disp, inner - 2 * BUBBLE_PAD)   # keep the bubble off the box edges
             if disp != type_text:                 # new line -> (re)start typing it out
                 type_text, type_start = disp, now
             typed = type_text[:int((now - type_start) * TYPE_CPS)]
@@ -696,7 +713,7 @@ def animate(color=True, fps=10, name="kh"):
                         else:
                             chat_history.append({"role": "user", "content": submit.strip()})
                             del chat_history[:-10]              # keep recent turns only
-                            temp_speech, temp_until = "hmm…", now + 60
+                            chat_pending_since = now           # keep current line; "hmm…" only after 3s
                             vit = {"belly": 100 - state["hunger"], "energy": state["energy"],
                                    "lines": today.get("added", 0), "commits": today.get("commits", 0),
                                    "streak": strk, "name": name}
@@ -778,6 +795,21 @@ def main(argv):
             else:
                 cfg["author"] = email; cs.save_config(cfg)
                 print("now counting only commits by:", email)
+    elif "--setkey" in argv:                        # save an Anthropic API key for chat
+        i = argv.index("--setkey")
+        key = argv[i + 1] if i + 1 < len(argv) and not argv[i + 1].startswith("--") else None
+        if not key:
+            import getpass
+            try:
+                key = getpass.getpass("Paste your Anthropic API key (hidden): ").strip()
+            except Exception:
+                key = ""
+        if key and key.startswith("sk-"):
+            cs.set_anthropic_key(key)
+            print("saved to ~/.claude-crab/config.json (plaintext — keep it private).")
+            print("chat is ready — run: crab")
+        else:
+            print("that didn't look like a key (expected sk-ant-...); nothing saved.")
     elif "--hoard" in argv:                         # everything you've gifted the crab
         h = cs.hoard_summary(cs.load_state())
         print("🦀  your hoard")

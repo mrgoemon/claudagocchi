@@ -15,6 +15,7 @@ Owns everything that makes the crab a pet rather than a screensaver:
 
 Pure stdlib. State lives in ~/.claude-crab/{state,config}.json.
 """
+import os
 import re
 import json
 import time
@@ -55,6 +56,16 @@ def load_config():
 
 def save_config(cfg):
     _save(CONFIG, cfg)
+
+def anthropic_key():
+    """Chat API key: the ANTHROPIC_API_KEY env var wins, else whatever
+    `crab --setkey` saved into config.json."""
+    return os.environ.get("ANTHROPIC_API_KEY") or load_config().get("anthropic_key")
+
+def set_anthropic_key(key):
+    cfg = load_config()
+    cfg["anthropic_key"] = key
+    save_config(cfg)
 
 def default_state():
     n = _now()

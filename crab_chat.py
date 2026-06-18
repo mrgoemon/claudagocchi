@@ -4,14 +4,17 @@
 Kept separate (and lazily imported) so the crab still runs with no `anthropic`
 package installed; chat just stays disabled until it's available + a key is set.
 """
-import os
+import re
+
+import crab_state as cs
 
 MODEL = "claude-haiku-4-5"         # cheap + fast, plenty for short crab chit-chat
 NAME = "kh"
 
 def available():
-    """True only if we can actually chat: SDK installed + API key present."""
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    """True only if we can actually chat: SDK installed + a key resolvable
+    (ANTHROPIC_API_KEY env var, or one saved via `crab --setkey`)."""
+    if not cs.anthropic_key():
         return False
     try:
         import anthropic  # noqa: F401
@@ -27,9 +30,10 @@ def _system(vit):
         f"You are the Claudagocchi — a tiny coral pixel crab that lives in {name}'s "
         f"terminal as a warm, playful coding companion. {name} is vibecoding (AI writes "
         f"the code; they direct and ship it).\n\n"
-        f"Reply in ONE short line, at most ~12 words. lowercase, friendly, a little "
-        f"cheeky. be a supportive friend who banters and cheers them on — not a formal "
-        f"assistant. no markdown, no lists; an occasional 🦀 is fine.\n\n"
+        f"Reply in ONE short line, at most ~8 words. lowercase, friendly, a little "
+        f"cheeky: a supportive friend who banters and cheers them on, not a formal "
+        f"assistant. no markdown, no lists, and NEVER use an em dash (—) — use a comma "
+        f"or a period. an occasional 🦀 is fine.\n\n"
         f"Your vitals right now: belly {b:.0f}/100, energy {e:.0f}/100. today {name} "
         f"committed {lines} lines across {commits} commits, on a {streak}-day streak."
     )
@@ -39,12 +43,16 @@ def ask(history, vit):
     Never raises — returns a friendly fallback line on any error."""
     try:
         import anthropic
-        client = anthropic.Anthropic()            # reads ANTHROPIC_API_KEY
+        client = anthropic.Anthropic(api_key=cs.anthropic_key())
         resp = client.messages.create(
             model=MODEL, max_tokens=64, system=_system(vit), messages=history,
         )
         text = next((b.text for b in resp.content if b.type == "text"), "").strip()
-        return text.replace("\n", " ") or "...(no words, just vibes)"
+        text = text.replace("\n", " ")
+        text = text.replace("—", ", ").replace("–", ", ")   # scrub em/en dashes, always
+        text = re.sub(r"\s+,", ",", text)
+        text = re.sub(r"\s{2,}", " ", text).strip(" ,")
+        return text or "...(no words, just vibes)"
     except Exception as e:                          # network / auth / etc.
         msg = e.__class__.__name__
         if "Authentication" in msg:
