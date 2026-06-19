@@ -12,7 +12,7 @@ like you're building something *for someone*.
 │              ▗ ▗   ▖ ▖   (a coral crab, alive & animated)        │
 │                ▘▘ ▝▝                                             │
 │                                                                  │
-│                 today  218 lines  ·  2 PRs  ·  3-day streak      │
+│              today  218 lines  ·  16 commits  ·  3 PRs           │
 │                 mood ●●●●○  energy ●●●○○  belly ●●●●●     ◆✦~◦◦   │
 │                 quest  open a PR  ●○○                            │
 │                                                                  │

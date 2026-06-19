@@ -659,6 +659,7 @@ def _game_scene(game, line, inner, stage_h, color, stats, pos, ground, fps):
     margin = inner - 12
     start_x = pos["x"]
     line = _clip(line, margin)
+    won = random.random() < 0.67                           # 67% finish, 33% fail
     def cf(fr): return None if narrow else fr
     if not narrow:                                         # 0) walk over to the desk
         yield from _walk_to(start_x, CRAB_COL, ground, stage_h, color, stats, line)
@@ -666,15 +667,18 @@ def _game_scene(game, line, inner, stage_h, color, stats, pos, ground, fps):
         yield _screen_window(color, inner, stage_h,
                              cf(pose(hand="walkA" if i % 2 == 0 else "walkB", gaze=1)),
                              screen, line, stats)            # 1) writing code
-    for j, (rows, caption) in enumerate(cg.play(game, gw, stage_h, color)):
+    for j, (rows, caption) in enumerate(cg.play(game, gw, stage_h, color, won)):
         yield _screen_window(color, inner, stage_h,
                              cf(pose(gaze=1, eye_open=(j % 14 != 0))),
                              rows, _clip(caption, margin), stats)        # 2) watching it play
-    banner = _banner_rows("gg! 🦀", gw, stage_h, color)
-    for k in range(max(int(fps), 8)):
-        yield _screen_window(color, inner, stage_h,
-                             cf(pose(hand="up", gaze=1, leg="squat" if k % 2 else "tuck")),
-                             banner, _clip("that was fun! 🦀", margin), stats)   # 3) cheering
+    if won:                                                # 3a) it finished -> cheer
+        banner, out = _banner_rows("gg! 🦀", gw, stage_h, color), "that was fun! 🦀"
+        react = [pose(hand="up", gaze=1, leg="squat" if k % 2 else "tuck") for k in range(max(int(fps), 8))]
+    else:                                                  # 3b) it failed -> aw, slump
+        banner, out = _banner_rows("aw, gg 🦀", gw, stage_h, color), "aw, so close! next time."
+        react = [pose(hand="down", gaze=1, eye_open=(k % 4 == 0), leg="squat") for k in range(max(int(fps), 8))]
+    for p in react:
+        yield _screen_window(color, inner, stage_h, cf(p), banner, _clip(out, margin), stats)
     if not narrow:                                         # 4) walk back to where it was
         yield from _walk_to(CRAB_COL, start_x, ground, stage_h, color, stats, "")
 

@@ -237,8 +237,9 @@ def stat_lines(state, quests, today, pr_stats, strk):
     l1 = f"mood {_meter(state['happiness'])}  energy {_meter(state['energy'])}  belly {_meter(belly)}"
     n = pr_stats.get("prs", 0)
     prlabel = f"{n} PR" if n == 1 else f"{n} PRs"
-    sd = f"{strk}-day streak" if strk else "start a streak!"
-    l2 = f"today  {today.get('added', 0)} lines  ·  {prlabel}  ·  {sd}"
+    c = today.get("commits", 0)
+    clabel = f"{c} commit" if c == 1 else f"{c} commits"
+    l2 = f"today  {today.get('added', 0)} lines  ·  {clabel}  ·  {prlabel}"
     nxt = next((q for q in quests if not q["done"]), None)
     if nxt:
         l3 = f"quest  {nxt['label']}  {_meter(nxt['prog']/nxt['goal']*100, 3)} ({nxt['prog']}/{nxt['goal']})"
