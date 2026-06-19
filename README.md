@@ -39,7 +39,8 @@ like you're building something *for someone*.
 - **Minigames** — now and then the crab "codes" a tiny game (a 💻 typing build-up)
   and then watches it play *itself* — a dino runner, pong, or snake, right inside
   the window. An **AI director** (Claude) picks the moment and the game; with no
-  key it still surprises you occasionally on its own.
+  key it still surprises you occasionally on its own. Want one now? Type `game`
+  (or `play dino` / `play pong` / `play snake`) in the chat line.
 
 ## Install
 

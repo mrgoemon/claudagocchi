@@ -118,7 +118,7 @@ def _input_line(buf, inner, color, ok):
         s = "  chat: set ANTHROPIC_API_KEY + `pip install anthropic`"
     else:
         shown = buf[-(inner - 4):] if len(buf) > inner - 4 else buf
-        s = ("  › " + shown + "▏") if buf else "  › talk to me… (type, Enter to send)"
+        s = ("  › " + shown + "▏") if buf else "  › talk to me, or type 'game' · Enter to send"
     s = s[:inner + 2]
     return (fg((150, 150, 160)) + s + RESET) if color else s
 
@@ -779,7 +779,19 @@ def animate(color=True, fps=10, name="kh"):
                 if r:
                     chat_buf, submit = _handle_keys(chat_buf, os.read(fd, 256))
                     if submit and submit.strip():
-                        if not chat_ok:
+                        cmd = submit.strip().lower()
+                        wants_game = (
+                            cmd in ("game", "play", "minigame", "play a game",
+                                    "make a game", "code a game", "play game")
+                            or cmd in cg.GAMES
+                            or (cmd.split()[0] in ("play", "make", "code", "start")
+                                and (any(g in cmd for g in cg.GAMES) or "game" in cmd)))
+                        if wants_game:                 # summon a game now (no key needed)
+                            named = [g for g in cg.GAMES if g in cmd]
+                            game_req = (named[0] if named else random.choice(cg.GAMES),
+                                        "you got it, let's play!")
+                            last_game = 0.0            # bypass the cooldown for a manual ask
+                        elif not chat_ok:
                             temp_speech, temp_until = "(set ANTHROPIC_API_KEY to chat!)", now + 5
                         else:
                             chat_history.append({"role": "user", "content": submit.strip()})
