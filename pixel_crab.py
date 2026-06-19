@@ -118,7 +118,7 @@ def _input_line(buf, inner, color, ok):
         s = "  chat: set ANTHROPIC_API_KEY + `pip install anthropic`"
     else:
         shown = buf[-(inner - 4):] if len(buf) > inner - 4 else buf
-        s = ("  › " + shown + "▏") if buf else "  › talk to me, or type 'game' · Enter to send"
+        s = ("  › " + shown + "▏") if buf else "  › talk to me · Enter to send"
     s = s[:inner + 2]
     return (fg((150, 150, 160)) + s + RESET) if color else s
 
@@ -560,6 +560,7 @@ def _gift_scene(pos, ground, inner, tier, glyph, right_pad):
     return frames
 
 GAME_LEFT = WIDTH + 5            # cols reserved for the crab + its 💻 on the left
+CRAB_COL = 1                     # the crab's column at its coding spot (bottom-left)
 
 # Fake code the crab "writes" during the build-up — + green, - red, blank = context.
 _CODE = [("+", "def play(self):"), ("+", "    while self.alive:"),
@@ -629,25 +630,42 @@ def _screen_window(color, inner, stage_h, crab_frame, screen, speech, stats) -> 
     for r in range(stage_h):
         items = []
         if crab_top <= r < crab_top + 3:                   # the crab, bottom-left
-            items.append((1, sprite[r - crab_top], WIDTH))
+            items.append((CRAB_COL, sprite[r - crab_top], WIDTH))
         if r == crab_top:                                  # 💻 in line, just right of it
-            items.append((WIDTH + 1, "💻", 2))
+            items.append((CRAB_COL + WIDTH, "💻", 2))
         items.append((GAME_LEFT, screen[r] if r < len(screen) else " " * gw, gw))
         body.append(_place(inner, items))
     return _frame_window(color, inner, body, speech, stats)
 
+def _walk_to(start, dest, ground, stage_h, color, stats, speech):
+    """Walk the crab column-by-column from `start` to `dest` (render_window
+    frames, crab on the ground). No teleporting — used to enter/leave the desk."""
+    x, step, i = start, 2, 0
+    facing = 1 if dest >= start else -1
+    while x != dest:
+        x = dest if abs(dest - x) < step else x + step * facing
+        i += 1
+        yield render_window(color, stage_h=stage_h, x=x, y=ground,
+                            frame=pose(hand="down", gaze=facing,
+                                       leg="stepA" if i % 2 else "stepB"),
+                            speech=speech, stats=stats)
+
 def _game_scene(game, line, inner, stage_h, color, stats, pos, ground, fps):
-    """One full minigame, with the crab always visible on the left watching its
-    screen: it writes code (green/red diff), the self-playing game runs, then it
-    cheers. Every frame is the same height as the crab window."""
+    """One full minigame. The crab walks over to its desk, writes code (green/red
+    diff), watches the self-playing game, cheers, then walks back to exactly where
+    it was — no teleporting. Every frame is the crab window's height."""
     narrow = (inner - GAME_LEFT) < 24
     gw = inner if narrow else inner - GAME_LEFT
     margin = inner - 12
+    start_x = pos["x"]
+    line = _clip(line, margin)
     def cf(fr): return None if narrow else fr
-    for i, screen in enumerate(_typing_screen(gw, color, max(int(fps * 4), 32), stage_h)):
+    if not narrow:                                         # 0) walk over to the desk
+        yield from _walk_to(start_x, CRAB_COL, ground, stage_h, color, stats, line)
+    for i, screen in enumerate(_typing_screen(gw, color, max(int(fps * 3), 28), stage_h)):
         yield _screen_window(color, inner, stage_h,
                              cf(pose(hand="walkA" if i % 2 == 0 else "walkB", gaze=1)),
-                             screen, _clip(line, margin), stats)        # 1) writing code
+                             screen, line, stats)            # 1) writing code
     for j, (rows, caption) in enumerate(cg.play(game, gw, stage_h, color)):
         yield _screen_window(color, inner, stage_h,
                              cf(pose(gaze=1, eye_open=(j % 14 != 0))),
@@ -657,6 +675,8 @@ def _game_scene(game, line, inner, stage_h, color, stats, pos, ground, fps):
         yield _screen_window(color, inner, stage_h,
                              cf(pose(hand="up", gaze=1, leg="squat" if k % 2 else "tuck")),
                              banner, _clip("that was fun! 🦀", margin), stats)   # 3) cheering
+    if not narrow:                                         # 4) walk back to where it was
+        yield from _walk_to(CRAB_COL, start_x, ground, stage_h, color, stats, "")
 
 def animate(color=True, fps=10, name="kh"):
     import time
