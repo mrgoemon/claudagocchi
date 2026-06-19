@@ -450,10 +450,17 @@ def fetch_my_prs(repos):
     return out
 
 def _pr_date(s):
+    """The PR's creation date in LOCAL time. gh returns UTC (…Z); taking the bare
+    date string mis-buckets PRs opened in the evening (already tomorrow in UTC),
+    so convert to the local timezone before pulling the date."""
     try:
-        return datetime.date.fromisoformat((s or "")[:10])
+        dt = datetime.datetime.fromisoformat((s or "").replace("Z", "+00:00"))
+        return dt.astimezone().date()
     except Exception:
-        return None
+        try:
+            return datetime.date.fromisoformat((s or "")[:10])
+        except Exception:
+            return None
 
 def pr_day_stats(prs):
     """From a list of your PRs: how many you opened today, their net lines, and
