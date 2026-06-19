@@ -559,23 +559,104 @@ def _gift_scene(pos, ground, inner, tier, glyph, right_pad):
     pos["x"] = x
     return frames
 
+GAME_LEFT = WIDTH + 5            # cols reserved for the crab + its 💻 on the left
+
+# Fake code the crab "writes" during the build-up — + green, - red, blank = context.
+_CODE = [("+", "def play(self):"), ("+", "    while self.alive:"),
+         ("-", "    # old loop"), ("+", "        self.step()"),
+         ("+", "        self.score += 1"), ("-", "    return None"),
+         ("+", "    if near(cactus): self.jump()"), (" ", "spawn_obstacle()"),
+         ("+", "self.render(world)"), ("-", "# fixme: physics"),
+         ("+", "for f in frames: tick(f)"), ("+", "draw(self.sprite)")]
+
+def _code_row(marker, text, gw, color):
+    raw = ((marker + " ") if marker.strip() else "  ") + text
+    raw = raw[:gw]
+    rgb = {"+": (90, 185, 95), "-": (215, 90, 90)}.get(marker, (140, 140, 150))
+    body = (fg(rgb) + raw + RESET) if color else raw
+    return body + " " * max(gw - _vlen(raw), 0)
+
+def _line_seq(n=40):
+    """An ordering of _CODE that reliably mixes added (+) and removed (-) lines,
+    so the build-up always shows both green and red."""
+    adds = [c for c in _CODE if c[0] == "+"]
+    rems = [c for c in _CODE if c[0] == "-"]
+    ctx = [c for c in _CODE if c[0] == " "]
+    for b in (adds, rems, ctx):
+        random.shuffle(b)
+    seq, ai, ri, cii = [], 0, 0, 0
+    while len(seq) < n:
+        seq.append(adds[ai % len(adds)]); ai += 1
+        seq.append(rems[ri % len(rems)]); ri += 1          # a red line every few lines
+        seq.append(adds[ai % len(adds)]); ai += 1
+        if ctx:
+            seq.append(ctx[cii % len(ctx)]); cii += 1
+    return seq
+
+def _typing_screen(gw, color, nframes, h):
+    """Stream of `h`-row screens (each gw wide) of code being typed + scrolled,
+    diff-style in green/red, with a blinking cursor."""
+    pool = _line_seq()
+    done, ci, typed = [], 0, 0
+    for f in range(nframes):
+        mk, text = pool[ci % len(pool)]
+        typed += random.choice([1, 2, 2, 3])
+        cur = text[:typed] + ("▏" if f % 2 == 0 else "")
+        shown = done[-(h - 1):] + [(mk, cur)]
+        rows = [" " * gw] * (h - len(shown)) + [_code_row(m, t, gw, color) for m, t in shown]
+        yield rows
+        if typed >= len(text):
+            done.append((mk, text)); ci += 1; typed = 0
+
+def _banner_rows(text, gw, h, color):
+    rows = [" " * gw for _ in range(h)]
+    t = _clip(text, gw)
+    pad = max(gw - _vlen(t), 0); left = pad // 2
+    rows[h // 2] = " " * left + ((fg((235, 205, 120)) + t + RESET) if color else t) + " " * (pad - left)
+    return rows
+
+def _screen_window(color, inner, stage_h, crab_frame, screen, speech, stats) -> str:
+    """Compose a window where the crab sits bottom-left (with its 💻) watching a
+    `screen` panel on the right. crab_frame=None -> screen fills the whole stage
+    (used only when the terminal is too narrow for both)."""
+    if crab_frame is None:
+        body = [screen[r] if r < len(screen) else " " * inner for r in range(stage_h)]
+        return _frame_window(color, inner, body, speech, stats)
+    gw = inner - GAME_LEFT
+    sprite = crab_rows(color, **crab_frame)
+    crab_top = stage_h - 3
+    body = []
+    for r in range(stage_h):
+        items = []
+        if crab_top <= r < crab_top + 3:                   # the crab, bottom-left
+            items.append((1, sprite[r - crab_top], WIDTH))
+        if r == crab_top:                                  # 💻 in line, just right of it
+            items.append((WIDTH + 1, "💻", 2))
+        items.append((GAME_LEFT, screen[r] if r < len(screen) else " " * gw, gw))
+        body.append(_place(inner, items))
+    return _frame_window(color, inner, body, speech, stats)
+
 def _game_scene(game, line, inner, stage_h, color, stats, pos, ground, fps):
-    """One full minigame as a stream of complete window strings: the crab taps
-    at a 💻 (the 'coding'), the self-playing game runs in the box, then the crab
-    cheers the result. Every frame is the same height as the crab window."""
-    x = pos["x"]
-    lap = (min(x + WIDTH, inner - 2), "💻", 0)             # a laptop beside the crab
+    """One full minigame, with the crab always visible on the left watching its
+    screen: it writes code (green/red diff), the self-playing game runs, then it
+    cheers. Every frame is the same height as the crab window."""
+    narrow = (inner - GAME_LEFT) < 24
+    gw = inner if narrow else inner - GAME_LEFT
     margin = inner - 12
-    for i in range(max(8, int(fps * 2.2))):                # 1) typing build-up
-        hand = "walkA" if i % 2 == 0 else "walkB"
-        yield render_window(color, stage_h=stage_h, x=x, frame=pose(hand=hand, gaze=1),
-                            speech=_clip(line, margin), stats=stats, drop=lap,
-                            emote=("✦" if i % 4 == 0 else "·"))
-    for rows, caption in cg.play(game, inner, stage_h, color):   # 2) the game plays itself
-        yield _frame_window(color, inner, rows, _clip(caption, margin), stats)
-    for cx, cy, cfrm, _d in _celebrate(x, ground):         # 3) the crab cheers
-        yield render_window(color, stage_h=stage_h, x=cx, y=cy, frame=cfrm,
-                            speech=_clip("that was fun! 🦀", margin), stats=stats)
+    def cf(fr): return None if narrow else fr
+    for i, screen in enumerate(_typing_screen(gw, color, max(int(fps * 4), 32), stage_h)):
+        yield _screen_window(color, inner, stage_h,
+                             cf(pose(hand="walkA" if i % 2 == 0 else "walkB", gaze=1)),
+                             screen, _clip(line, margin), stats)        # 1) writing code
+    for j, (rows, caption) in enumerate(cg.play(game, gw, stage_h, color)):
+        yield _screen_window(color, inner, stage_h,
+                             cf(pose(gaze=1, eye_open=(j % 14 != 0))),
+                             rows, _clip(caption, margin), stats)        # 2) watching it play
+    banner = _banner_rows("gg! 🦀", gw, stage_h, color)
+    for k in range(max(int(fps), 8)):
+        yield _screen_window(color, inner, stage_h,
+                             cf(pose(hand="up", gaze=1, leg="squat" if k % 2 else "tuck")),
+                             banner, _clip("that was fun! 🦀", margin), stats)   # 3) cheering
 
 def animate(color=True, fps=10, name="kh"):
     import time

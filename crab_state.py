@@ -400,6 +400,8 @@ def detect_commit_gifts(repos, author, seen):
     for sha, net in found:
         if sha not in seen:
             seen.add(sha)
+            if net < 1:                          # a nibble needs at least 1 line
+                continue
             idx = gift_tier(net, has_pr=False)
             gifts.append({"net": net, "gross": net, "commits": 1, "pr": False,
                           "tier": idx, "name": GIFT_TIERS[idx][1],
@@ -409,7 +411,7 @@ def detect_commit_gifts(repos, author, seen):
 def commit_gift_speech(gift):
     n = gift["net"]
     return {
-        0: f"+{n} lines — a nibble, thanks!",
+        0: f"+{n} lines! a nibble, thanks!",
         1: f"+{n} lines! {gift['label']} *munch*",
         2: f"+{n} lines! {gift['label']}, nice!",
         3: f"+{n} lines?! {gift['label']}! you spoil me",
