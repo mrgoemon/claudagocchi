@@ -38,6 +38,40 @@ def _system(vit):
         f"committed {lines} lines across {commits} commits, on a {streak}-day streak."
     )
 
+def direct(vit, games):
+    """The AI director: decide whether the crab should 'code' and play a
+    minigame right now, and which one. Returns {"game": name, "line": quip} when
+    it's go-time, else None. Kept rare by the prompt. Never raises."""
+    try:
+        import json
+        import anthropic
+        client = anthropic.Anthropic(api_key=cs.anthropic_key())
+        system = (
+            f"You direct a tiny terminal crab pet. once in a while, as a treat, it "
+            f"'codes' and then watches a small self-playing minigame. decide if RIGHT "
+            f"NOW is a good, special moment for that. keep it OCCASIONAL, not constant "
+            f"— most of the time choose play=false. games: {', '.join(games)}.\n"
+            f"crab vitals: belly {vit.get('belly',0):.0f}/100, energy {vit.get('energy',0):.0f}/100, "
+            f"{vit.get('lines',0)} lines / {vit.get('commits',0)} commits today, "
+            f"{vit.get('streak',0)}-day streak, hour {vit.get('hour',12)}.\n"
+            f"reply with ONLY compact json: {{\"play\": true|false, \"game\": one of "
+            f"[{', '.join(games)}] or null, \"line\": \"<excited lowercase quip, <=8 "
+            f"words, NEVER an em dash>\"}}."
+        )
+        resp = client.messages.create(
+            model=MODEL, max_tokens=60, system=system,
+            messages=[{"role": "user", "content": "is now a good time to code a game?"}],
+        )
+        text = next((b.text for b in resp.content if b.type == "text"), "")
+        m = re.search(r"\{.*\}", text, re.S)
+        d = json.loads(m.group(0)) if m else {}
+        if not d.get("play") or d.get("game") not in games:
+            return None
+        line = (d.get("line") or "").replace("—", ", ").replace("–", ", ").strip()
+        return {"game": d["game"], "line": line or "let's build a game!"}
+    except Exception:
+        return None
+
 def ask(history, vit):
     """Send the conversation to Claude and return the crab's one-line reply.
     Never raises — returns a friendly fallback line on any error."""

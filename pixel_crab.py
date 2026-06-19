@@ -29,6 +29,7 @@ import queue
 
 import crab_state as cs
 import crab_chat as cc
+import crab_games as cg
 
 CORAL = (200, 126, 95)
 EYE   = (24, 24, 28)
@@ -244,6 +245,22 @@ def render_window(color=True, stage_h=3, x=None, y=0, frame=None,
     stats = STATS if stats is None else stats
     rows = [top, blank(), text(speech), blank()]
     rows += [bar + s + bar for s in stage]
+    rows += [blank()] + [text(s) for s in stats] + [blank(), bottom]
+    return "\n".join(rows)
+
+def _frame_window(color, inner, body, speech, stats) -> str:
+    """Same box as render_window, but the stage rows are `body` (a minigame
+    playfield: each row already exactly `inner` visible columns). Produces the
+    identical line count to render_window so the in-place redraw stays aligned."""
+    co = (lambda s: fg(CORAL) + s + RESET) if color else (lambda s: s)
+    k = max(inner - 3 - len(TITLE), 0)
+    top = co("╭─ " + TITLE + " " + "─" * k + "╮")
+    bottom = co("╰" + "─" * inner + "╯")
+    bar = co("│")
+    def text(line): return bar + _center_text(line, inner) + bar
+    def blank():     return bar + " " * inner + bar
+    rows = [top, blank(), text(speech), blank()]
+    rows += [bar + s + bar for s in body]
     rows += [blank()] + [text(s) for s in stats] + [blank(), bottom]
     return "\n".join(rows)
 
@@ -542,6 +559,24 @@ def _gift_scene(pos, ground, inner, tier, glyph, right_pad):
     pos["x"] = x
     return frames
 
+def _game_scene(game, line, inner, stage_h, color, stats, pos, ground, fps):
+    """One full minigame as a stream of complete window strings: the crab taps
+    at a 💻 (the 'coding'), the self-playing game runs in the box, then the crab
+    cheers the result. Every frame is the same height as the crab window."""
+    x = pos["x"]
+    lap = (min(x + WIDTH, inner - 2), "💻", 0)             # a laptop beside the crab
+    margin = inner - 12
+    for i in range(max(8, int(fps * 2.2))):                # 1) typing build-up
+        hand = "walkA" if i % 2 == 0 else "walkB"
+        yield render_window(color, stage_h=stage_h, x=x, frame=pose(hand=hand, gaze=1),
+                            speech=_clip(line, margin), stats=stats, drop=lap,
+                            emote=("✦" if i % 4 == 0 else "·"))
+    for rows, caption in cg.play(game, inner, stage_h, color):   # 2) the game plays itself
+        yield _frame_window(color, inner, rows, _clip(caption, margin), stats)
+    for cx, cy, cfrm, _d in _celebrate(x, ground):         # 3) the crab cheers
+        yield render_window(color, stage_h=stage_h, x=cx, y=cy, frame=cfrm,
+                            speech=_clip("that was fun! 🦀", margin), stats=stats)
+
 def animate(color=True, fps=10, name="kh"):
     import time
     if not sys.stdout.isatty():
@@ -614,6 +649,25 @@ def animate(color=True, fps=10, name="kh"):
             fd, old_term = None, None              # not a real tty -> no keyboard input
     n += 1                                          # the input line drawn under the box
 
+    # --- AI director: every ~55s, decide whether the crab should "code" a game
+    dir_q = queue.Queue()
+    dir_box = {"vit": {"belly": 60, "energy": 70, "lines": 0, "commits": 0,
+                       "streak": 0, "hour": datetime.datetime.now().hour, "name": name}}
+    scene, game_req, last_game = None, None, 0.0
+    DIRECTOR_EVERY, GAME_COOLDOWN = 55, 150
+    def _director():
+        while True:
+            time.sleep(DIRECTOR_EVERY)
+            if chat_ok:
+                d = cc.direct(dir_box["vit"], cg.GAMES)
+                if d:
+                    dir_q.put((d["game"], d["line"]))
+            elif random.random() < 0.22:            # no AI key -> a rare local trigger
+                dir_q.put((random.choice(cg.GAMES),
+                           random.choice(["ooh, let me build something!",
+                                          "time to code a lil game!", "watch this 🦀"])))
+    threading.Thread(target=_director, daemon=True).start()
+
     sys.stdout.write("\033[?25l")
     try:
         first, i = True, 0
@@ -629,6 +683,8 @@ def animate(color=True, fps=10, name="kh"):
                 chat_history.append({"role": "assistant", "content": reply})
                 temp_speech, temp_until = reply, now + max(5.0, len(reply) / TYPE_CPS + 3)
                 chat_pending_since = None         # reply is here, no need for "hmm…"
+            while not dir_q.empty():              # --- director wants the crab to play a game
+                game_req = dir_q.get()
             if i % poll_every == 0:               # --- poll: vitals, git, reactions
                 events = cs.tick(state, repos, now)
                 today = cs.today_stats(repos, author)
@@ -643,6 +699,9 @@ def animate(color=True, fps=10, name="kh"):
                 mood_box["has_hoard"] = bool(cs.hoard_summary(state).get("count"))
                 mood_box["recent_commit"] = now < recent_until
                 strk = cs.streak(repos, author)
+                dir_box["vit"] = {"belly": 100 - state["hunger"], "energy": state["energy"],
+                                  "lines": today.get("added", 0), "commits": today.get("commits", 0),
+                                  "streak": strk, "hour": datetime.datetime.now().hour, "name": name}
                 cur_stats = cs.stat_lines(state, quests, today, pr_stats_box["v"], strk)
                 if strk in MILESTONES and strk not in state.setdefault("celebrated_ms", []):
                     state["celebrated_ms"].append(strk)         # arm the milestone dance, once
@@ -679,22 +738,34 @@ def animate(color=True, fps=10, name="kh"):
                 temp_speech, temp_until = line, now + len(pending) * delay + 2
                 cs.save_state(state)
 
-            if pending:
-                x, y, frame, drop = pending.pop(0); emote = None
-            else:
-                x, y, frame, emote = next(gen); drop = None
+            if scene is None and game_req is not None and not pending \
+                    and now - last_game > GAME_COOLDOWN:   # start a director-chosen game
+                g, gline = game_req
+                scene = _game_scene(g, gline, inner, stage_h, color, list(cur_stats),
+                                    dict(pos), ground, fps)
+            game_req = None
 
-            disp = temp_speech if now < temp_until else idle_speech
-            if chat_pending_since is not None and now - chat_pending_since > 3:
-                disp = "hmm…"                     # only after a slow reply; else keep the line
-            disp = _clip(disp, inner - 2 * BUBBLE_PAD)   # keep the bubble off the box edges
-            if disp != type_text:                 # new line -> (re)start typing it out
-                type_text, type_start = disp, now
-            typed = type_text[:int((now - type_start) * TYPE_CPS)]
-            bubble = typed + " " * max(_vlen(type_text) - _vlen(typed), 0)  # hold full width
-            win = render_window(color, stage_h=stage_h, x=x, y=y, frame=frame,
-                                speech=bubble, stats=cur_stats, hoard=hoard_g,
-                                drop=drop, emote=emote)
+            if scene is not None:                 # a minigame owns the whole window
+                try:
+                    win = next(scene)
+                except StopIteration:
+                    scene, last_game = None, now
+            if scene is None:                     # normal crab life
+                if pending:
+                    x, y, frame, drop = pending.pop(0); emote = None
+                else:
+                    x, y, frame, emote = next(gen); drop = None
+                disp = temp_speech if now < temp_until else idle_speech
+                if chat_pending_since is not None and now - chat_pending_since > 3:
+                    disp = "hmm…"                 # only after a slow reply; else keep the line
+                disp = _clip(disp, inner - 2 * BUBBLE_PAD)   # keep the bubble off the box edges
+                if disp != type_text:             # new line -> (re)start typing it out
+                    type_text, type_start = disp, now
+                typed = type_text[:int((now - type_start) * TYPE_CPS)]
+                bubble = typed + " " * max(_vlen(type_text) - _vlen(typed), 0)  # hold full width
+                win = render_window(color, stage_h=stage_h, x=x, y=y, frame=frame,
+                                    speech=bubble, stats=cur_stats, hoard=hoard_g,
+                                    drop=drop, emote=emote)
             win += "\n" + _input_line(chat_buf, inner, color, chat_ok)
             if not first:
                 sys.stdout.write(f"\033[{n}A")

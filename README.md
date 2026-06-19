@@ -36,6 +36,10 @@ like you're building something *for someone*.
   Haiku by default). Enable it with `pip install anthropic` plus a key — an
   `ANTHROPIC_API_KEY` env var *or* `crab --setkey`. Without it, chat stays off and
   everything else works.
+- **Minigames** — now and then the crab "codes" a tiny game (a 💻 typing build-up)
+  and then watches it play *itself* — a dino runner, pong, or snake, right inside
+  the window. An **AI director** (Claude) picks the moment and the game; with no
+  key it still surprises you occasionally on its own.
 
 ## Install
 
@@ -71,9 +75,11 @@ API key (`crab --setkey` or an `ANTHROPIC_API_KEY` env var).
   the behavior scheduler, the gift scenes).
 - `crab_state.py` — the state engine (vitals decay, git/PR reading, gift tiers,
   quests, the speech).
+- `crab_chat.py` — the Claude API layer (chat replies + the minigame director).
+- `crab_games.py` — the self-playing minigames (dino / pong / snake).
 - State lives in `~/.claude-crab/` (`state.json`, `config.json`).
 
-Pure Python standard library — no dependencies, with one exception: chat uses the
-`anthropic` package, and only when you turn it on.
+Pure Python standard library — no dependencies, with one exception: the chat and
+the minigame director use the `anthropic` package, and only when you turn it on.
 
 > `crab.py` is the original line-art prototype, kept for posterity.
