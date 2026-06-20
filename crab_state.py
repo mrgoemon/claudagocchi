@@ -230,21 +230,21 @@ def _meter(v, n=5):
     filled = max(0, min(n, round(v / 100.0 * n)))
     return "●" * filled + "○" * (n - filled)
 
-def stat_lines(state, quests, today, pr_stats, strk):
-    """today = your-authored commit stats (lines); pr_stats = PRs opened by your
-    account; strk = your commit-day streak."""
+def _htok(n):
+    if n >= 1e6: return f"{n / 1e6:.1f}M"
+    if n >= 1e3: return f"{n / 1e3:.1f}k"
+    return str(int(n))
+
+def stat_lines(state, today, pr_stats, tokens_today):
+    """l1 = vitals; l2 = Claude Code tokens used today; l3 = today's code stats."""
     belly = 100 - state["hunger"]
     l1 = f"mood {_meter(state['happiness'])}  energy {_meter(state['energy'])}  belly {_meter(belly)}"
+    l2 = f"tokens used today  {_htok(tokens_today)}"
     n = pr_stats.get("prs", 0)
     prlabel = f"{n} PR" if n == 1 else f"{n} PRs"
     c = today.get("commits", 0)
     clabel = f"{c} commit" if c == 1 else f"{c} commits"
-    l2 = f"today  {today.get('added', 0)} lines  ·  {clabel}  ·  {prlabel}"
-    nxt = next((q for q in quests if not q["done"]), None)
-    if nxt:
-        l3 = f"quest  {nxt['label']}  {_meter(nxt['prog']/nxt['goal']*100, 3)} ({nxt['prog']}/{nxt['goal']})"
-    else:
-        l3 = "all quests done today!  (｡･ω･｡)"
+    l3 = f"today  {today.get('added', 0)} lines  ·  {clabel}  ·  {prlabel}"
     return [l1, l2, l3]
 
 def speech(state, mood, events, fresh_quests, brk, name="kh"):
@@ -360,6 +360,23 @@ def feed_gift(state, gift):
     state["happiness"] = min(100.0, state["happiness"] + boost)
     state["hunger"]    = max(0.0, state["hunger"] - boost)
     state["energy"]    = min(100.0, state["energy"] + 5)
+
+TOKENS_FEED_PER_MTOK = 12.0          # belly points gained per 1M Claude Code tokens
+
+def feed_tokens(state, all_tokens):
+    """Fill the belly by how many NEW tokens you've run through Claude Code since
+    last check. Uses the monotonic all-time count so a day rollover never feeds a
+    huge chunk; the belly still decays over time when you stop coding."""
+    prev = state.get("tokens_seen")
+    state["tokens_seen"] = all_tokens
+    if prev is None:                                 # first run: just baseline
+        return
+    delta = max(0, all_tokens - prev)
+    if delta:
+        boost = (delta / 1e6) * TOKENS_FEED_PER_MTOK
+        state["hunger"]    = max(0.0, state["hunger"] - boost)
+        state["happiness"] = min(100.0, state["happiness"] + boost * 0.3)
+        state["energy"]    = min(100.0, state["energy"] + boost * 0.2)
 
 def gift_speech(gift):
     pr = " (a whole PR!)" if gift["pr"] else ""

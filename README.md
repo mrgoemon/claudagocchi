@@ -12,9 +12,9 @@ like you're building something *for someone*.
 │              ▗ ▗   ▖ ▖   (a coral crab, alive & animated)        │
 │                ▘▘ ▝▝                                             │
 │                                                                  │
-│              today  218 lines  ·  16 commits  ·  3 PRs           │
 │                 mood ●●●●○  energy ●●●○○  belly ●●●●●     ◆✦~◦◦   │
-│                 quest  open a PR  ●○○                            │
+│                 tokens used today  33.0M                         │
+│                 today  218 lines  ·  16 commits  ·  3 PRs        │
 │                                                                  │
 ╰──────────────────────────────────────────────────────────────────╯
 ```
@@ -23,8 +23,9 @@ like you're building something *for someone*.
 
 - **Lives in your terminal** — a calm, cat-like crab that loafs, blinks, struts,
   stretches, grooms, and occasionally pounces (drives the animation off your mood).
-- **Vitals** — hunger / energy / happiness decay over real time and are fed by
-  your coding.
+- **Vitals** — energy / happiness / belly decay over real time. The **belly fills
+  as you use Claude Code** (token usage feeds the crab), so it's well-fed while
+  you're working and gets hungry when you stop.
 - **Daily code vitals** — lines from *your* commits, PRs you opened, and your
   streak, read straight from git + the GitHub CLI.
 - **Gifts** — when you **open a PR** (or push), the crab receives a gift sized by

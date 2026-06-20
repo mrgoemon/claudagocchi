@@ -30,6 +30,7 @@ import queue
 import crab_state as cs
 import crab_chat as cc
 import crab_games as cg
+import crab_tokens as ctok
 
 CORAL = (200, 126, 95)
 EYE   = (24, 24, 28)
@@ -773,6 +774,19 @@ def animate(color=True, fps=10, name="kh"):
                                           "time to code a lil game!", "watch this 🦀"])))
     threading.Thread(target=_director, daemon=True).start()
 
+    # --- token worker: scan Claude Code's logs off the render loop (~every 45s)
+    tok_box = {"today": state.get("tok_today_cache", 0), "all": 0}
+    def _token_worker():
+        while True:
+            try:
+                data = ctok.aggregate()
+                tok_box["today"] = sum(ctok._total(b) for b in data["today"].values())
+                tok_box["all"] = sum(ctok._total(b) for b in data["all"].values())
+            except Exception:
+                pass
+            time.sleep(45)
+    threading.Thread(target=_token_worker, daemon=True).start()
+
     sys.stdout.write("\033[?25l")
     try:
         first, i = True, 0
@@ -804,10 +818,13 @@ def animate(color=True, fps=10, name="kh"):
                 mood_box["has_hoard"] = bool(cs.hoard_summary(state).get("count"))
                 mood_box["recent_commit"] = now < recent_until
                 strk = cs.streak(repos, author)
+                if tok_box["all"]:                    # belly fills from tokens you've used
+                    cs.feed_tokens(state, tok_box["all"])
+                    state["tok_today_cache"] = tok_box["today"]
                 dir_box["vit"] = {"belly": 100 - state["hunger"], "energy": state["energy"],
                                   "lines": today.get("added", 0), "commits": today.get("commits", 0),
                                   "streak": strk, "hour": datetime.datetime.now().hour, "name": name}
-                cur_stats = cs.stat_lines(state, quests, today, pr_stats_box["v"], strk)
+                cur_stats = cs.stat_lines(state, today, pr_stats_box["v"], tok_box["today"])
                 if strk in MILESTONES and strk not in state.setdefault("celebrated_ms", []):
                     state["celebrated_ms"].append(strk)         # arm the milestone dance, once
                     mood_box["milestone_ready"] = True
@@ -933,7 +950,7 @@ def _status_frame(color):
     pr_stats = cs.pr_day_stats(cs.fetch_my_prs(repos))
     state["pr_cache"] = pr_stats                          # warm the cache for next launch
     cs.save_state(state)
-    stats = cs.stat_lines(state, quests, today, pr_stats, cs.streak(repos, author))
+    stats = cs.stat_lines(state, today, pr_stats, ctok.tokens_today())
     sp = cs.speech(state, mood, [], [], cs.break_due(state))
     hoard_g = cs.hoard_glyphs(cs.hoard_summary(state))
     return render_window(color, stage_h=3, speech=sp, stats=stats, hoard=hoard_g)
