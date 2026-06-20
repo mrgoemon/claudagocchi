@@ -239,7 +239,7 @@ def stat_lines(state, today, pr_stats, tokens_today):
     """l1 = vitals; l2 = Claude Code tokens used today; l3 = today's code stats."""
     belly = 100 - state["hunger"]
     l1 = f"mood {_meter(state['happiness'])}  energy {_meter(state['energy'])}  belly {_meter(belly)}"
-    l2 = f"tokens used today  {_htok(tokens_today)}"
+    l2 = f"tokens used today  {tokens_today:,}"
     n = pr_stats.get("prs", 0)
     prlabel = f"{n} PR" if n == 1 else f"{n} PRs"
     c = today.get("commits", 0)
