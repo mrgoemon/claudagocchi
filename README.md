@@ -66,6 +66,7 @@ API key (`crab --setkey` or an `ANTHROPIC_API_KEY` env var).
 | `crab --hoard` | Everything you've gifted it |
 | `crab --watch <path>` / `--unwatch <path>` / `--list` | Manage tracked repos |
 | `crab --me [email]` / `crab --me off` | Count only your commits (or everyone) |
+| `crab --tokens` | Your Claude Code token usage (today / 7d / all-time, by model) |
 | `crab --setkey` | Save an Anthropic API key so the crab can chat |
 | `crab --welcome` | Static box, no live data |
 | `crab --no-color` | No coral tint |
@@ -78,6 +79,8 @@ API key (`crab --setkey` or an `ANTHROPIC_API_KEY` env var).
   quests, the speech).
 - `crab_chat.py` — the Claude API layer (chat replies + the minigame director).
 - `crab_games.py` — the self-playing minigames (dino / pong / snake).
+- `crab_tokens.py` — totals Claude Code token usage from its local session logs
+  (`~/.claude/projects/`); works on the Max/Pro plan, no API key needed.
 - State lives in `~/.claude-crab/` (`state.json`, `config.json`).
 
 Pure Python standard library — no dependencies, with one exception: the chat and

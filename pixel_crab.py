@@ -983,6 +983,9 @@ def main(argv):
             else:
                 cfg["author"] = email; cs.save_config(cfg)
                 print("now counting only commits by:", email)
+    elif "--tokens" in argv:                        # Claude Code token usage (Max plan)
+        import crab_tokens
+        print(crab_tokens.report())
     elif "--setkey" in argv:                        # save an Anthropic API key for chat
         i = argv.index("--setkey")
         key = argv[i + 1] if i + 1 < len(argv) and not argv[i + 1].startswith("--") else None
