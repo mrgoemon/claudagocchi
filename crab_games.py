@@ -36,14 +36,15 @@ def _place(inner, items, color):
     return out + " " * max(inner - cur, 0)
 
 # --- dino runner -------------------------------------------------------------
-def dino(inner, h, color, won=True):
+def dino(inner, h, color, result=None):
+    if result is None: result = {}
     CORAL, GREEN, GREY = (217, 119, 87), (90, 170, 90), (110, 110, 120)
     DCOL = 4                                     # the dino's fixed column
     gy = h - 2                                   # entities stand a row above the ground line
     line_row = h - 1
-    JUMP = [1, 2, 3, 3, 3, 2, 1]                 # height profile of one hop
+    JUMP = [1, 2, 3, 3, 3, 2, 1]                 # a well-timed hop, clears cleanly
+    RUSHED = [1, 2, 1]                           # an unoptimized, low/short hop -- real risk
     SPEED, MAXF = 2, 130
-    doom = None if won else random.randint(int(MAXF * 0.5), int(MAXF * 0.82))  # crash frame if losing
     jump, cacti, score, gap, alive, dino_h = [], [], 0, 0, True, 0
     f = 0
     while alive and f < MAXF:
@@ -51,17 +52,15 @@ def dino(inner, h, color, won=True):
         if gap <= 0 and (not cacti or cacti[-1] < inner - 16) and random.random() < 0.5:
             cacti.append(inner - 3); gap = random.randint(8, 15)
         gap -= 1
-        if doom is not None and f >= doom and not any(c > DCOL for c in cacti):
-            cacti.append(min(DCOL + 9, inner - 3))    # losing: send a cactus in to hit
         cacti = [c - SPEED for c in cacti]
         score += sum(1 for c in cacti if c < DCOL - 1 and c >= DCOL - 1 - SPEED)
         cacti = [c for c in cacti if c >= -2]
-        if not jump and (doom is None or f < doom):    # the bot hops... until it's doomed
-            if any(DCOL + 1 <= c <= DCOL + 11 for c in cacti):
-                jump = list(JUMP)
+        if not jump and any(DCOL + 1 <= c <= DCOL + 11 for c in cacti):
+            optimal = random.random() < 0.8        # each reaction: 80% clean, 20% rushed
+            jump = list(JUMP if optimal else RUSHED)
         dino_h = jump.pop(0) if jump else 0
-        if doom is not None and dino_h == 0 and any(DCOL - 1 <= c <= DCOL + 1 for c in cacti):
-            alive = False                              # only a losing run ever crashes
+        if dino_h == 0 and any(DCOL - 1 <= c <= DCOL + 1 for c in cacti):
+            alive = False                              # a mistimed hop can still get clipped
         rows = []
         for r in range(h):
             if r == line_row:
@@ -74,6 +73,7 @@ def dino(inner, h, color, won=True):
                 items += [(c, "🌵", GREEN) for c in cacti if 0 <= c < inner]
             rows.append(_place(inner, items, color))
         yield rows, f"🦖 dino · score {score}"
+    result["won"] = alive
     end = "🏁 nice run!" if alive else "💥 crashed!"
     for _ in range(8):
         rows = []
@@ -87,38 +87,41 @@ def dino(inner, h, color, won=True):
         yield rows, f"{end} score {score}"
 
 # --- pong (bot vs bot) -------------------------------------------------------
-def pong(inner, h, color, won=True):
+def pong(inner, h, color, result=None):
+    if result is None: result = {}
     CORAL, BALL = (217, 119, 87), (235, 235, 235)
     lx, rx = 1, inner - 2
-    plen = max(2, h // 2)
-    lp = rp = (h - plen) // 2
+    plen = max(2, h // 4)                         # a paddle that can miss -- full-height
+    lp = rp = (h - plen) // 2                      # coverage never let a rally end
     bx, by = inner // 2, h // 2
-    vx, vy = (1 if won else -1), random.choice([-1, 1])   # head toward the loser first
+    vx, vy = random.choice([-1, 1]), random.choice([-1, 1])
     a = b = 0                                     # a = crab (left), b = opponent (right)
     WIN = 3
 
-    def track(p, winner):                         # cosmetic: winner follows tightly, the
-        target = by - plen // 2                   # loser lags and visibly whiffs
-        if winner or random.random() < 0.3:
+    def track(p):                                  # each frame: 80% a clean move toward
+        target = by - plen // 2                    # the ball, 20% a fumbled/random one
+        if random.random() < 0.8:
             if p < target: p += 1
             elif p > target: p -= 1
+        else:
+            p += random.choice([-1, 0, 1])
         return max(0, min(h - plen, p))
 
     def reset(d): return inner // 2, h // 2, d, random.choice([-1, 1])
 
     rows = [" " * inner] * h
     for _ in range(500):
-        if (a if won else b) >= WIN:              # stop when the intended winner has it
+        if a >= WIN or b >= WIN:                  # first to WIN takes it -- earned, not fixed
             break
         bx += vx; by += vy
         if by <= 0: by, vy = 0, 1
         if by >= h - 1: by, vy = h - 1, -1
-        lp, rp = track(lp, won), track(rp, not won)   # left=crab wins iff `won`
+        lp, rp = track(lp), track(rp)
         if bx <= lx + 1:                          # crab's wall (left)
-            if won: vx, bx = 1, lx + 2            # the winner's wall always defends
-            else: b += 1; bx, by, vx, vy = reset(1)        # the loser's wall concedes
+            if lp <= by < lp + plen: vx, bx = 1, lx + 2   # in position -> return it
+            else: b += 1; bx, by, vx, vy = reset(1)       # out of position -> concede
         elif bx >= rx - 1:                        # opponent's wall (right)
-            if not won: vx, bx = -1, rx - 2
+            if rp <= by < rp + plen: vx, bx = -1, rx - 2
             else: a += 1; bx, by, vx, vy = reset(-1)
         rows = []
         for r in range(h):
@@ -128,6 +131,11 @@ def pong(inner, h, color, won=True):
             if r == by and 0 <= bx < inner: items.append((bx, "●", BALL))
             rows.append(_place(inner, items, color))
         yield rows, f"🏓 pong · {a}:{b}"
+    if a == b:                                    # ran out of frames still tied -- a coin flip,
+        won = random.random() < 0.5               # not a scripted loss, decides the photo finish
+    else:
+        won = a > b
+    result["won"] = won
     res = "🏆 you win!" if won else "😵 you lose"
     for _ in range(6):
         yield rows, f"{res}  {a}:{b}"
@@ -141,26 +149,29 @@ def _food(inner, h, body):
             return p
     return (0, 0)
 
-def snake(inner, h, color, won=True):
+def snake(inner, h, color, result=None):
+    if result is None: result = {}
     CORAL, HEAD, FOOD = (217, 119, 87), (240, 200, 90), (220, 90, 90)
     body = [(inner // 2, h // 2)]
     food = _food(inner, h, body)
-    score = 0
-    goal = random.randint(4, 7) if won else random.randint(1, 3)   # how far it gets
+    score, alive = 0, True
     rows = [" " * inner] * h
     for _ in range(220):
         hx, hy = body[0]
         occ = set(body[:-1])                      # the tail cell frees up as we move
-        best, bestd = None, 1e9
+        options = []
         for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
             nx, ny = hx + dx, hy + dy
-            if not (0 <= nx < inner and 0 <= ny < h) or (nx, ny) in occ:
-                continue
-            d = abs(nx - food[0]) + abs(ny - food[1])
-            if d < bestd:
-                bestd, best = d, (nx, ny)
-        if best is None:
+            if 0 <= nx < inner and 0 <= ny < h and (nx, ny) not in occ:
+                d = abs(nx - food[0]) + abs(ny - food[1])
+                options.append((d, (nx, ny)))
+        if not options:
+            alive = False
             break                                  # boxed itself in
+        if random.random() < 0.8:                 # 80% a greedy step toward the food,
+            best = min(options, key=lambda t: t[0])[1]     # 20% an unoptimized wander
+        else:
+            best = random.choice(options)[1]
         body.insert(0, best)
         if best == food:
             score += 1; food = _food(inner, h, body)
@@ -172,11 +183,10 @@ def snake(inner, h, color, won=True):
         by_row.setdefault(food[1], []).append((food[0], "●", FOOD))
         rows = [_place(inner, by_row.get(r, []), color) for r in range(h)]
         yield rows, f"🐍 snake · {score}"
-        if score >= goal:
-            break
-    res = "🏆 nice run!" if won else "😵 game over"
+    result["won"] = alive
+    res = "🏆 nice run!" if alive else "😵 game over"
     for _ in range(6):
         yield rows, f"{res}  score {score}"
 
-def play(name, inner, h, color, won=True):
-    return {"dino": dino, "pong": pong, "snake": snake}.get(name, dino)(inner, h, color, won)
+def play(name, inner, h, color, result=None):
+    return {"dino": dino, "pong": pong, "snake": snake}.get(name, dino)(inner, h, color, result)
