@@ -321,6 +321,20 @@ def action_weights(ctx):
 
 MILESTONES = {3, 7, 14, 21, 30, 50, 100, 200, 365}   # streak days worth a party
 
+ACCESSORIES = ["🎩", "👑", "🎀", "🧢", "🎈", "🧸", "⚽", "🎾", "🪀", "🦴"]  # hats & toys
+
+def _with_accessory(gen, fps=10):
+    """Wrap a behavior stream so the crab occasionally turns up wearing a
+    random hat or toy above its head -- shown whenever there's no other
+    emote in play, swapped out (or put away) every few minutes."""
+    acc, left = None, 0
+    for x, y, frame, emote in gen:
+        if left <= 0:
+            acc = random.choice(ACCESSORIES) if random.random() < 0.2 else None
+            left = random.randint(int(fps * 45), int(fps * 150))
+        left -= 1
+        yield x, y, frame, emote or acc
+
 def crab_bounds(inner, right_pad=0):
     """The left/right columns the crab may stand at (clear of walls + hoard)."""
     maxx = inner - WIDTH
@@ -722,7 +736,7 @@ def animate(color=True, fps=10, name="kh"):
     mood_box = {"mood": "okay"}
     mood = "okay"
     pos = {"x": (inner - WIDTH) // 2}             # the crab's column, shared with behaviors
-    gen = behaviors(inner, stage_h, mood_box, right_pad=HOARD_CAP + 1, pos=pos)
+    gen = _with_accessory(behaviors(inner, stage_h, mood_box, right_pad=HOARD_CAP + 1, pos=pos), fps)
     hoard_g = cs.hoard_glyphs(cs.hoard_summary(state))
     n = render_window(color, stage_h=stage_h).count("\n") + 1
     delay = 1.0 / max(fps, 1)
