@@ -322,17 +322,22 @@ def action_weights(ctx):
 MILESTONES = {3, 7, 14, 21, 30, 50, 100, 200, 365}   # streak days worth a party
 
 ACCESSORIES = ["🎩", "👑", "🎀", "🧢", "🎈", "🧸", "⚽", "🎾", "🪀", "🦴"]  # hats & toys
+HEAD_CLASH = {"♥", "!", "˚", "°", "○"}   # reactions that would clash with a worn hat
 
 def _with_accessory(gen, fps=10):
     """Wrap a behavior stream so the crab occasionally turns up wearing a
     random hat or toy above its head -- shown whenever there's no other
-    emote in play, swapped out (or put away) every few minutes."""
+    emote in play, swapped out (or put away) every few minutes. While worn,
+    the heart/exclamation/bubble reactions are skipped (they'd sit right on
+    top of the hat) rather than replacing it."""
     acc, left = None, 0
     for x, y, frame, emote in gen:
         if left <= 0:
             acc = random.choice(ACCESSORIES) if random.random() < 0.2 else None
             left = random.randint(int(fps * 45), int(fps * 150))
         left -= 1
+        if acc and emote in HEAD_CLASH:
+            emote = None
         yield x, y, frame, emote or acc
 
 def crab_bounds(inner, right_pad=0):
