@@ -47,10 +47,11 @@ def direct(vit, games):
         import anthropic
         client = anthropic.Anthropic(api_key=cs.anthropic_key())
         system = (
-            f"You direct a tiny terminal crab pet. once in a while, as a treat, it "
+            f"You direct a tiny terminal crab pet. fairly often, as a treat, it "
             f"'codes' and then watches a small self-playing minigame. decide if RIGHT "
-            f"NOW is a good, special moment for that. keep it OCCASIONAL, not constant "
-            f"— most of the time choose play=false. games: {', '.join(games)}.\n"
+            f"NOW is a good moment for that. lean toward play=true, a game every few "
+            f"minutes is great — only choose play=false if the crab is clearly low on "
+            f"belly or energy right now. games: {', '.join(games)}.\n"
             f"crab vitals: belly {vit.get('belly',0):.0f}/100, energy {vit.get('energy',0):.0f}/100, "
             f"{vit.get('lines',0)} lines / {vit.get('commits',0)} commits today, "
             f"{vit.get('streak',0)}-day streak, hour {vit.get('hour',12)}.\n"

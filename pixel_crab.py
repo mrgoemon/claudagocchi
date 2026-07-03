@@ -770,12 +770,12 @@ def animate(color=True, fps=10, name="kh"):
             fd, old_term = None, None              # not a real tty -> no keyboard input
     n += 1                                          # the input line drawn under the box
 
-    # --- AI director: every ~55s, decide whether the crab should "code" a game
+    # --- AI director: every ~25s, decide whether the crab should "code" a game
     dir_q = queue.Queue()
     dir_box = {"vit": {"belly": 60, "energy": 70, "lines": 0, "commits": 0,
                        "streak": 0, "hour": datetime.datetime.now().hour, "name": name}}
     scene, game_req, last_game = None, None, 0.0
-    DIRECTOR_EVERY, GAME_COOLDOWN = 55, 150
+    DIRECTOR_EVERY, GAME_COOLDOWN = 25, 75
     def _director():
         while True:
             time.sleep(DIRECTOR_EVERY)
@@ -783,7 +783,7 @@ def animate(color=True, fps=10, name="kh"):
                 d = cc.direct(dir_box["vit"], cg.GAMES)
                 if d:
                     dir_q.put((d["game"], d["line"]))
-            elif random.random() < 0.22:            # no AI key -> a rare local trigger
+            elif random.random() < 0.5:             # no AI key -> a frequent local trigger
                 dir_q.put((random.choice(cg.GAMES),
                            random.choice(["ooh, let me build something!",
                                           "time to code a lil game!", "watch this 🦀"])))
