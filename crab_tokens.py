@@ -87,6 +87,12 @@ def tokens_today(root=PROJECTS):
     """Just today's total token throughput — cheap headline number for the crab."""
     return sum(_total(b) for b in aggregate(root)["today"].values())
 
+def today_all(root=PROJECTS):
+    """(today_total, all_time_total) from one scan."""
+    d = aggregate(root)
+    return (sum(_total(b) for b in d["today"].values()),
+            sum(_total(b) for b in d["all"].values()))
+
 def _h(n):
     if n >= 1e6: return f"{n / 1e6:.1f}M"
     if n >= 1e3: return f"{n / 1e3:.1f}k"

@@ -235,8 +235,9 @@ def _htok(n):
     if n >= 1e3: return f"{n / 1e3:.1f}k"
     return str(int(n))
 
-def stat_lines(state, today, pr_stats, tokens_today):
-    """l1 = vitals; l2 = Claude Code tokens used today; l3 = today's code stats."""
+def stat_lines(state, today, pr_stats, tokens_today, tokens_all=0):
+    """l1 = vitals; l2 = tokens used today; l3 = today's code stats;
+    l4 = all-time Claude Code tokens."""
     belly = 100 - state["hunger"]
     l1 = f"mood {_meter(state['happiness'])}  energy {_meter(state['energy'])}  belly {_meter(belly)}"
     l2 = f"tokens used today  {tokens_today:,}"
@@ -245,7 +246,8 @@ def stat_lines(state, today, pr_stats, tokens_today):
     c = today.get("commits", 0)
     clabel = f"{c} commit" if c == 1 else f"{c} commits"
     l3 = f"today  {today.get('added', 0)} lines  ·  {clabel}  ·  {prlabel}"
-    return [l1, l2, l3]
+    l4 = f"tokens all-time  {tokens_all:,}"
+    return [l1, l2, l3, l4]
 
 def speech(state, mood, events, fresh_quests, brk, name="kh"):
     if "merge" in events:

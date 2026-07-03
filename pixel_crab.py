@@ -163,7 +163,7 @@ def crab(color=True, **frame) -> str:
 # --- The Claudagocchi window -------------------------------------------------
 TITLE = "Claudagocchi"
 SPEECH = "Welcome back kh!"                 # -> speech bubble later
-STATS = ["Fable 5", "Claude Max", "~ヽ(｡･ω･｡)"]  # -> live stats later
+STATS = ["~ヽ(｡･ω･｡)", "tokens used today …", "today …", "tokens all-time …"]  # -> live stats
 
 HOARD_CAP = 10                  # max glyphs shown in the pile
 HOARD_COLOR = [(120, 120, 120), (155, 150, 160), (200, 126, 95),
@@ -844,7 +844,7 @@ def animate(color=True, fps=10, name="kh"):
                 dir_box["vit"] = {"belly": 100 - state["hunger"], "energy": state["energy"],
                                   "lines": today.get("added", 0), "commits": today.get("commits", 0),
                                   "streak": strk, "hour": datetime.datetime.now().hour, "name": name}
-                cur_stats = cs.stat_lines(state, today, pr_stats_box["v"], tok_box["today"])
+                cur_stats = cs.stat_lines(state, today, pr_stats_box["v"], tok_box["today"], tok_box["all"])
                 if strk in MILESTONES and strk not in state.setdefault("celebrated_ms", []):
                     state["celebrated_ms"].append(strk)         # arm the milestone dance, once
                     mood_box["milestone_ready"] = True
@@ -970,7 +970,8 @@ def _status_frame(color):
     pr_stats = cs.pr_day_stats(cs.fetch_my_prs(repos))
     state["pr_cache"] = pr_stats                          # warm the cache for next launch
     cs.save_state(state)
-    stats = cs.stat_lines(state, today, pr_stats, ctok.tokens_today())
+    tok_today, tok_all = ctok.today_all()
+    stats = cs.stat_lines(state, today, pr_stats, tok_today, tok_all)
     sp = cs.speech(state, mood, [], [], cs.break_due(state))
     hoard_g = cs.hoard_glyphs(cs.hoard_summary(state))
     return render_window(color, stage_h=3, speech=sp, stats=stats, hoard=hoard_g)

@@ -5,18 +5,21 @@ lives in your terminal and reacts to how you code. Made to make vibecoding feel
 like you're building something *for someone*.
 
 ```
-╭─ Claudagocchi ───────────────────────────────────────────────────╮
-│                                                                  │
-│                          Welcome back kh!                        │
-│                                                                  │
-│              ▗ ▗   ▖ ▖   (a coral crab, alive & animated)        │
-│                ▘▘ ▝▝                                             │
-│                                                                  │
-│                 mood ●●●●○  energy ●●●○○  belly ●●●●●     ◆✦~◦◦   │
-│                 tokens used today  33.0M                         │
-│                 today  218 lines  ·  16 commits  ·  3 PRs        │
-│                                                                  │
-╰──────────────────────────────────────────────────────────────────╯
+╭─ Claudagocchi ──────────────────────────────────────────────────────────────╮
+│                                                                             │
+│                              Welcome back kh!                               │
+│                                                                             │
+│                                  ▗ ▗   ▖ ▖                                  │
+│                                                                             │
+│                                    ▘▘ ▝▝                                    │
+│                                                                       ◆✦~◦◦ │
+│                                                                             │
+│                    mood ●●●●○  energy ●●●○○  belly ●●●●●                    │
+│                        tokens used today  42,157,267                        │
+│                  today  218 lines  ·  16 commits  ·  3 PRs                  │
+│                       tokens all-time  1,403,326,221                        │
+│                                                                             │
+╰─────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ## What it does
