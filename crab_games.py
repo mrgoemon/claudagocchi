@@ -15,6 +15,9 @@ import unicodedata
 
 GAMES = ["dino", "pong", "snake", "crossing", "invaders", "breakout", "squash"]
 
+OPTIMAL = 0.67                   # how often a bot makes the best move it can see. the rest
+                                 # of the time it fumbles, so every win has to be earned
+
 RESET = "\033[0m"
 def _fg(rgb): r, g, b = rgb; return f"\033[38;2;{r};{g};{b}m"
 
@@ -56,7 +59,7 @@ def dino(inner, h, color, result=None):
         score += sum(1 for c in cacti if c < DCOL - 1 and c >= DCOL - 1 - SPEED)
         cacti = [c for c in cacti if c >= -2]
         if not jump and any(DCOL + 1 <= c <= DCOL + 11 for c in cacti):
-            optimal = random.random() < 0.8        # each reaction: 80% clean, 20% rushed
+            optimal = random.random() < OPTIMAL    # each reaction: clean, or rushed
             jump = list(JUMP if optimal else RUSHED)
         dino_h = jump.pop(0) if jump else 0
         if dino_h == 0 and any(DCOL - 1 <= c <= DCOL + 1 for c in cacti):
@@ -104,7 +107,7 @@ def pong(inner, h, color, result=None):
 
     def track(p):                                  # each frame: a clean move toward the ball
         target = by - plen // 2                    # or a fumbled/random one -- and the longer
-        if random.random() < max(0.5, 0.8 - 0.04 * rally):   # the rally runs, the more both
+        if random.random() < OPTIMAL - min(0.3, 0.04 * rally):   # the rally runs, the more
             if p < target: p += 1                  # sides fumble, so a point always lands
             elif p > target: p -= 1
         else:
@@ -173,8 +176,8 @@ def snake(inner, h, color, result=None):
         if not options:
             alive = False
             break                                  # boxed itself in
-        if random.random() < 0.8:                 # 80% a greedy step toward the food,
-            best = min(options, key=lambda t: t[0])[1]     # 20% an unoptimized wander
+        if random.random() < OPTIMAL:             # a greedy step toward the food, or
+            best = min(options, key=lambda t: t[0])[1]     # an unoptimized wander
         else:
             best = random.choice(options)[1]
         body.insert(0, best)
@@ -218,7 +221,7 @@ def crossing(inner, h, color, result=None):
     def at(r): return next((l for l in lanes if l["row"] == r), None)
 
     row, score, alive, bank, f = h - 1, 0, True, 0, 0
-    careful = random.random() < 0.8               # each hop is either patient or a reckless
+    careful = random.random() < OPTIMAL           # each hop is either patient or a reckless
     TARGET, MAXF = 6, 150                         # dart -- re-rolled on every landing
     while alive and score < TARGET and f < MAXF:
         f += 1
@@ -251,12 +254,12 @@ def crossing(inner, h, color, result=None):
                 go = True                          # a car is on it -- squeeze through
             elif row + 1 == h - 1 or (back and not blocked(back, cx, 2)):
                 row += 1; go = False               # duck back a lane instead
-                careful = random.random() < 0.8
+                careful = random.random() < OPTIMAL
             else:
                 go = True                          # boxed in: hop and hope
             if go:
                 row -= 1
-                careful = random.random() < 0.8
+                careful = random.random() < OPTIMAL
                 land = at(row)
                 if land and blocked(land, cx, 0):
                     alive = False
@@ -317,7 +320,7 @@ def invaders(inner, h, color, result=None):
             want = sx + (4 if threat[0] <= sx else -4)
         else:
             want = aim
-        if random.random() < 0.8:                 # 80% the right move, 20% a fumbled one
+        if random.random() < OPTIMAL:             # the right move, or a fumbled one
             sx += max(-2, min(2, want - sx))
         else:
             sx += random.choice([-1, 0, 1])
@@ -379,7 +382,7 @@ def breakout(inner, h, color, result=None):
 
     while bricks and alive and f < MAXF:
         f += 1
-        if random.random() < 0.8:                 # 80% a clean read of the ball,
+        if random.random() < OPTIMAL:             # a clean read of the ball, else
             land = landing()                      # 20% a lazy/wrong-way nudge
             tgt = land - PW // 2
             if abs(px - tgt) <= 1:                # already set? then meet the ball
@@ -437,7 +440,7 @@ def squash(inner, h, color, result=None):
         gone = [b for b in bugs if not (0 <= b[0] < inner - 1)]
         esc += len(gone)
         bugs = [b for b in bugs if b not in gone]
-        if bugs and random.random() < 0.8:        # 80% a straight line to the nearest bug,
+        if bugs and random.random() < OPTIMAL:    # a straight line to the nearest bug,
             t = min(bugs, key=lambda b: abs(b[0] - hx) + 2 * abs(b[1] - hy))
             hx += max(-2, min(2, t[0] - hx))      # 20% an aimless swing
             hy += (1 if t[1] > hy else -1) if t[1] != hy else 0
