@@ -41,10 +41,12 @@ like you're building something *for someone*.
   `ANTHROPIC_API_KEY` env var *or* `crab --setkey`. Without it, chat stays off and
   everything else works.
 - **Minigames** — now and then the crab "codes" a tiny game (a 💻 typing build-up)
-  and then watches it play *itself* — a dino runner, pong, or snake, right inside
-  the window. An **AI director** (Claude) picks the moment and the game; with no
-  key it still surprises you occasionally on its own. Want one now? Type `game`
-  (or `play dino` / `play pong` / `play snake`) in the chat line.
+  and then watches it play *itself*, right inside the window: a dino runner,
+  pong, snake, a crab dodging traffic (`crossing`), space `invaders`, `breakout`,
+  or a `squash`-the-bugs hammer. An **AI director** (Claude) picks the moment and
+  the game; with no key it still surprises you occasionally on its own. Want one
+  now? Type `game` (or `play snake` / `play crossing` / any name) in the chat line.
+  Each one self-plays off per-move rolls, so the crab genuinely wins or loses.
 
 ## Install
 
@@ -82,7 +84,8 @@ API key (`crab --setkey` or an `ANTHROPIC_API_KEY` env var).
 - `crab_state.py` — the state engine (vitals decay, git/PR reading, gift tiers,
   quests, the speech).
 - `crab_chat.py` — the Claude API layer (chat replies + the minigame director).
-- `crab_games.py` — the self-playing minigames (dino / pong / snake).
+- `crab_games.py` — the self-playing minigames (dino / pong / snake / crossing /
+  invaders / breakout / squash).
 - `crab_tokens.py` — totals Claude Code token usage from its local session logs
   (`~/.claude/projects/`); works on the Max/Pro plan, no API key needed.
 - State lives in `~/.claude-crab/` (`state.json`, `config.json`).
