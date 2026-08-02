@@ -87,42 +87,44 @@ def dino(inner, h, color, result=None):
         yield rows, f"{end} score {score}"
 
 # --- pong (bot vs bot) -------------------------------------------------------
+def _save(by, plen, h):
+    return max(0, min(h - plen, by - plen // 2))  # slide a paddle onto the ball
+
 def pong(inner, h, color, result=None):
     if result is None: result = {}
     CORAL, BALL = (217, 119, 87), (235, 235, 235)
     lx, rx = 1, inner - 2
     plen = max(2, h // 4)                         # a paddle that can miss -- full-height
     lp = rp = (h - plen) // 2                      # coverage never let a rally end
-    bx, by = inner // 2, h // 2
-    vx, vy = random.choice([-1, 1]), random.choice([-1, 1])
-    a = b = 0                                     # a = crab (left), b = opponent (right)
-    WIN = 3
+    SPD = 3                                       # a brisk ball: at 1 col/frame a single
+    bx, by = inner // 2, h // 2                   # rally ate half a minute of wall-to-wall
+    vx, vy = random.choice([-SPD, SPD]), random.choice([-1, 1])
+    ARM = 2                                       # both sides get a warm-up swing
+    a = b = rally = 0                             # a = crab (left), b = opponent (right)
 
-    def track(p):                                  # each frame: 80% a clean move toward
-        target = by - plen // 2                    # the ball, 20% a fumbled/random one
-        if random.random() < 0.8:
-            if p < target: p += 1
+    def track(p):                                  # each frame: a clean move toward the ball
+        target = by - plen // 2                    # or a fumbled/random one -- and the longer
+        if random.random() < max(0.5, 0.8 - 0.04 * rally):   # the rally runs, the more both
+            if p < target: p += 1                  # sides fumble, so a point always lands
             elif p > target: p -= 1
         else:
             p += random.choice([-1, 0, 1])
         return max(0, min(h - plen, p))
 
-    def reset(d): return inner // 2, h // 2, d, random.choice([-1, 1])
-
     rows = [" " * inner] * h
     for _ in range(500):
-        if a >= WIN or b >= WIN:                  # first to WIN takes it -- earned, not fixed
-            break
         bx += vx; by += vy
         if by <= 0: by, vy = 0, 1
         if by >= h - 1: by, vy = h - 1, -1
         lp, rp = track(lp), track(rp)
         if bx <= lx + 1:                          # crab's wall (left)
-            if lp <= by < lp + plen: vx, bx = 1, lx + 2   # in position -> return it
-            else: b += 1; bx, by, vx, vy = reset(1)       # out of position -> concede
+            if rally < ARM: lp = _save(by, plen, h)      # warm-up: it gets there in time
+            if lp <= by < lp + plen: vx, bx, rally = SPD, lx + 2, rally + 1
+            else: b = 1                           # out of position -> concede
         elif bx >= rx - 1:                        # opponent's wall (right)
-            if rp <= by < rp + plen: vx, bx = -1, rx - 2
-            else: a += 1; bx, by, vx, vy = reset(-1)
+            if rally < ARM: rp = _save(by, plen, h)
+            if rp <= by < rp + plen: vx, bx, rally = -SPD, rx - 2, rally + 1
+            else: a = 1
         rows = []
         for r in range(h):
             items = []
@@ -130,15 +132,18 @@ def pong(inner, h, color, result=None):
             if rp <= r < rp + plen: items.append((rx, "┃", CORAL))
             if r == by and 0 <= bx < inner: items.append((bx, "●", BALL))
             rows.append(_place(inner, items, color))
-        yield rows, f"🏓 pong · {a}:{b}"
-    if a == b:                                    # ran out of frames still tied -- a coin flip,
-        won = random.random() < 0.5               # not a scripted loss, decides the photo finish
+        yield rows, (f"🏓 pong · sudden death · rally {rally}" if rally >= ARM
+                     else f"🏓 pong · warm-up · rally {rally}")
+        if a or b:                                # sudden death: the first point ends it
+            break
+    if a == b:                                    # nobody missed inside the frame cap -- a
+        won = random.random() < 0.5               # coin flip decides the photo finish
     else:
         won = a > b
     result["won"] = won
     res = "🏆 you win!" if won else "😵 you lose"
     for _ in range(6):
-        yield rows, f"{res}  {a}:{b}"
+        yield rows, f"{res}  after {rally} rallies"
 
 # --- snake (greedy autopilot) ------------------------------------------------
 def _food(inner, h, body):
