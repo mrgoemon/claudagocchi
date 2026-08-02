@@ -13,7 +13,7 @@ in the window. A built-in bot plays; the crab just spectates.
 import random
 import unicodedata
 
-GAMES = ["dino", "pong", "snake"]
+GAMES = ["dino", "pong", "snake", "crossing", "invaders", "breakout", "squash"]
 
 RESET = "\033[0m"
 def _fg(rgb): r, g, b = rgb; return f"\033[38;2;{r};{g};{b}m"
@@ -188,5 +188,275 @@ def snake(inner, h, color, result=None):
     for _ in range(6):
         yield rows, f"{res}  score {score}"
 
+# --- crab crossing (dodge the traffic) ---------------------------------------
+_CARS = ["🚗", "🚙", "🚚", "🏎"]
+
+def crossing(inner, h, color, result=None):
+    if result is None: result = {}
+    CORAL, GOLD, GREY = (217, 119, 87), (240, 200, 90), (110, 110, 120)
+    cx = max(0, min(inner - 2, inner // 3))       # the crab crosses on a fixed column
+    lanes = []
+    for i, r in enumerate(range(1, h - 1)):       # traffic between the bank and the curb
+        lanes.append({"row": r, "dir": 1 if i % 2 == 0 else -1,
+                      "speed": random.choice([1, 2]), "cars": [],
+                      "wait": random.randint(0, 6), "glyph": random.choice(_CARS)})
+
+    def blocked(ln, x, margin):
+        """Is a car in `ln` on (or `margin` columns short of) the crab's two
+        columns? Only traffic still coming counts — a car that just went past
+        leaves the safest gap on the road, and the crab should take it."""
+        lo, hi = x - 1, x + 1                     # margin 0 == touching the crab
+        if ln["dir"] > 0: lo -= margin
+        else: hi += margin
+        return any(lo <= c <= hi for c in ln["cars"])
+
+    def at(r): return next((l for l in lanes if l["row"] == r), None)
+
+    row, score, alive, bank, f = h - 1, 0, True, 0, 0
+    careful = random.random() < 0.8               # each hop is either patient or a reckless
+    TARGET, MAXF = 6, 150                         # dart -- re-rolled on every landing
+    while alive and score < TARGET and f < MAXF:
+        f += 1
+        for ln in lanes:                          # traffic rolls first
+            ln["wait"] -= 1
+            if ln["wait"] <= 0:
+                ln["cars"].append(-2 if ln["dir"] > 0 else inner)
+                ln["wait"] = random.randint(9, 18)     # gaps a crab can actually sit in
+            ln["cars"] = [c + ln["dir"] * ln["speed"] for c in ln["cars"]]
+            ln["cars"] = [c for c in ln["cars"] if -3 <= c <= inner + 2]
+        cur = at(row)
+        if cur and blocked(cur, cx, 0):           # a car ran down a dawdling crab
+            alive = False
+        elif bank:                                # a beat at the flag, then trot back
+            bank -= 1
+            if not bank: row = h - 1
+        elif row > 0:
+            nxt = at(row - 1)
+            pressed = cur is not None and blocked(cur, cx, cur["speed"] * 3)
+            back = at(row + 1)
+            if nxt is None:                        # stepping up onto the goal bank
+                go = True
+            elif not careful:                      # a dart cuts it fine instead of waiting
+                go = not blocked(nxt, cx, 1)       # for a gap it would call safe
+            elif not blocked(nxt, cx, nxt["speed"] * 3):
+                go = True                          # a real gap opened up
+            elif not pressed:
+                go = False                         # nothing coming: sit tight
+            elif not blocked(nxt, cx, 1):
+                go = True                          # a car is on it -- squeeze through
+            elif row + 1 == h - 1 or (back and not blocked(back, cx, 2)):
+                row += 1; go = False               # duck back a lane instead
+                careful = random.random() < 0.8
+            else:
+                go = True                          # boxed in: hop and hope
+            if go:
+                row -= 1
+                careful = random.random() < 0.8
+                land = at(row)
+                if land and blocked(land, cx, 0):
+                    alive = False
+                elif row == 0:
+                    score += 1; bank = 3
+        rows = []
+        for r in range(h):
+            items = []
+            if r == 0 and row != 0:
+                items.append((cx, "🏁", GOLD))
+            ln = at(r)
+            if ln and not (r == row and not alive):
+                items += [(c, ln["glyph"], GREY) for c in ln["cars"] if 0 <= c < inner - 1]
+            if r == row:
+                items.append((cx, "🦀" if alive else "💥", CORAL))
+            rows.append(_place(inner, items, color))
+        yield rows, f"🦀 crossing · {score}/{TARGET} home"
+    won = alive and score >= TARGET
+    result["won"] = won
+    end = "🏁 made it across!" if won else "💥 splat!"
+    for _ in range(8):
+        yield [_place(inner, [(cx, "🦀" if won else "💥", CORAL)], color) if r == row
+               else " " * inner for r in range(h)], f"{end} {score}/{TARGET}"
+
+# --- space invaders (bot ship vs. a marching wave) ---------------------------
+def invaders(inner, h, color, result=None):
+    if result is None: result = {}
+    CORAL, GREEN, WHITE, RED = (217, 119, 87), (90, 170, 90), (235, 235, 235), (220, 90, 90)
+    PITCH, BOMB_EVERY = 4, 11
+    ncol = max(3, min(7, (inner - 4) // PITCH))
+    nrow = min(2, max(1, h - 3))
+    wave = {(c, r) for c in range(ncol) for r in range(nrow)}
+    ship_row = h - 1
+    ox, oy, d, bounces = 1, 0, 1, 0
+    sx, bullet, bombs = inner // 2, None, []
+    alive, f = True, 0
+    MAXF = 300
+
+    def acol(c): return ox + c * PITCH
+
+    while wave and alive and f < MAXF:
+        f += 1
+        if f % 2 == 0:                            # the block marches at half the ship's pace
+            step = ox + d                         # (any faster and no shot could ever land)
+            if step < 0 or step + (ncol - 1) * PITCH + 1 > inner - 1:
+                d = -d; bounces += 1
+                if bounces % 2 == 0: oy += 1      # every second wall, it drops a row
+            else:
+                ox = step
+        if oy + nrow - 1 >= ship_row - 1:         # the wave landed on top of the ship
+            alive = False; break
+        threat = min((b for b in bombs if abs(b[0] - sx) <= 3 and b[1] >= ship_row - 3),
+                     key=lambda b: (-b[1], abs(b[0] - sx)), default=None)
+        tgt = min(wave, key=lambda a: (abs(acol(a[0]) - sx), -a[1]))
+        flight = (ship_row - 1) - (oy + tgt[1])   # frames a shot needs to get up there
+        aim = acol(tgt[0]) + d * (flight // 2)    # lead it -- the wave marches meanwhile
+        if threat:                                # dodging beats aiming
+            want = sx + (4 if threat[0] <= sx else -4)
+        else:
+            want = aim
+        if random.random() < 0.8:                 # 80% the right move, 20% a fumbled one
+            sx += max(-2, min(2, want - sx))
+        else:
+            sx += random.choice([-1, 0, 1])
+        sx = max(0, min(inner - 1, sx))
+        if bullet is None and not threat and 0 <= sx - aim <= 1:
+            bullet = (sx, ship_row - 1)
+        elif bullet is not None:
+            bx, by = bullet[0], bullet[1] - 1
+            k = next((a for a in wave if oy + a[1] == by
+                      and acol(a[0]) <= bx <= acol(a[0]) + 1), None) if by >= 0 else None
+            if k: wave.discard(k); bullet = None
+            else: bullet = None if by < 0 else (bx, by)
+        if wave and f % BOMB_EVERY == 0:
+            a = random.choice(sorted(wave))
+            bombs.append((acol(a[0]), oy + a[1] + 1))
+        bombs = [(x, y + 1) for x, y in bombs]
+        if any(y >= ship_row and abs(x - sx) <= 1 for x, y in bombs):
+            alive = False
+        bombs = [(x, y) for x, y in bombs if y < h]
+        rows = []
+        for r in range(h):
+            items = [(acol(c), "👾", GREEN) for (c, rr) in wave
+                     if oy + rr == r and 0 <= acol(c) < inner - 1]
+            items += [(x, "•", RED) for x, y in bombs if y == r and 0 <= x < inner]
+            if bullet and bullet[1] == r: items.append((bullet[0], "│", WHITE))
+            if r == ship_row: items.append((sx, "▲" if alive else "💥", CORAL))
+            rows.append(_place(inner, items, color))
+        yield rows, f"👾 invaders · {len(wave)} left"
+    won = alive and not wave
+    result["won"] = won
+    end = "🏆 wave cleared!" if won else "💥 ship down!"
+    for _ in range(6):
+        yield [_place(inner, [(sx, "▲" if won else "💥", CORAL)], color) if r == ship_row
+               else " " * inner for r in range(h)], f"{end} {ncol * nrow - len(wave)} hits"
+
+# --- breakout (bot paddle, two rows of bricks) -------------------------------
+def breakout(inner, h, color, result=None):
+    if result is None: result = {}
+    CORAL, GOLD, WHITE = (217, 119, 87), (240, 200, 90), (235, 235, 235)
+    BW, PITCH, PW = 7, 10, 5
+    ncol = max(2, (inner - 2) // PITCH)
+    nrow = min(2, max(1, h - 3))
+    bricks = {(1 + c * PITCH, r) for c in range(ncol) for r in range(nrow)}
+    total = len(bricks)
+    px = (inner - PW) // 2
+    bx, by = inner // 2, h - 2
+    vx, vy = random.choice([-1, 1]), -1
+    alive, f = True, 0
+    MAXF = 420
+    rows = [" " * inner] * h
+
+    def landing():
+        """Where the ball will meet the paddle row — straight down, or up off the
+        bricks and back. Wall bounces fold in as a reflection, so the bot doesn't
+        get wrong-footed at the edges the way chasing the live column does."""
+        steps = (h - 1 - by) if vy > 0 else by + (h - 1)
+        x = (bx + vx * steps) % (2 * (inner - 1))
+        return x if x < inner else 2 * (inner - 1) - x
+
+    while bricks and alive and f < MAXF:
+        f += 1
+        if random.random() < 0.8:                 # 80% a clean read of the ball,
+            land = landing()                      # 20% a lazy/wrong-way nudge
+            tgt = land - PW // 2
+            if abs(px - tgt) <= 1:                # already set? then meet the ball
+                near = min(bricks, key=lambda b: abs(b[0] + BW // 2 - land))
+                tgt -= 1 if near[0] + BW // 2 >= land else -1   # off-centre, angling the
+            px += max(-2, min(2, tgt - px))       # return at what's still standing
+        else:
+            px += random.choice([-1, 0, 1])
+        px = max(0, min(inner - PW, px))
+        bx += vx; by += vy
+        if bx <= 0: bx, vx = 0, 1
+        elif bx >= inner - 1: bx, vx = inner - 1, -1
+        if by <= 0: by, vy = 0, 1
+        hit = next((b for b in bricks if b[1] == by and b[0] <= bx < b[0] + BW), None)
+        if hit:
+            bricks.discard(hit); vy = -vy
+        elif by >= h - 1:
+            if px <= bx < px + PW:                         # returned off the paddle: the
+                by, vy = h - 2, -1                         # side it hits sets the angle, so
+                vx = 1 if bx >= px + PW // 2 else -1       # the ball sweeps the whole wall
+            else:
+                alive = False                              # missed it
+        rows = []
+        for r in range(h):
+            items = [(c, "▬" * BW, GOLD) for (c, rr) in bricks if rr == r]
+            if r == by and 0 <= bx < inner: items.append((bx, "●", WHITE))
+            if r == h - 1: items.append((px, "▂" * PW, CORAL))
+            rows.append(_place(inner, items, color))
+        yield rows, f"🧱 breakout · {total - len(bricks)}/{total}"
+    won = alive and not bricks
+    result["won"] = won
+    end = "🏆 cleared the wall!" if won else "😵 missed it"
+    for _ in range(6):
+        yield rows, f"{end}  {total - len(bricks)}/{total}"
+
+# --- bug squash (the crab's hammer vs. bugs crawling out of the code) --------
+def squash(inner, h, color, result=None):
+    if result is None: result = {}
+    CORAL, GREEN, RED = (217, 119, 87), (90, 170, 90), (220, 90, 90)
+    TARGET, MAX_ESC = 12, 3
+    bugs = []                                     # [x, row, direction]
+    hx, hy = inner // 2, h // 2
+    boom = None                                   # (x, row, ttl)
+    score, esc, spawn, f = 0, 0, 0, 0
+    MAXF = 240
+    rows = [" " * inner] * h
+    while score < TARGET and esc < MAX_ESC and f < MAXF:
+        f += 1
+        spawn -= 1
+        if spawn <= 0 and len(bugs) < 8:
+            d = random.choice([-1, 1])
+            bugs.append([0 if d > 0 else inner - 2, random.randrange(h), d])
+            spawn = random.randint(3, 7)
+        for b in bugs: b[0] += b[2] * 2           # they scuttle as fast as the hammer swings
+        gone = [b for b in bugs if not (0 <= b[0] < inner - 1)]
+        esc += len(gone)
+        bugs = [b for b in bugs if b not in gone]
+        if bugs and random.random() < 0.8:        # 80% a straight line to the nearest bug,
+            t = min(bugs, key=lambda b: abs(b[0] - hx) + 2 * abs(b[1] - hy))
+            hx += max(-2, min(2, t[0] - hx))      # 20% an aimless swing
+            hy += (1 if t[1] > hy else -1) if t[1] != hy else 0
+        else:
+            hx += random.choice([-2, -1, 0, 1, 2]); hy += random.choice([-1, 0, 1])
+        hx, hy = max(0, min(inner - 2, hx)), max(0, min(h - 1, hy))
+        struck = next((b for b in bugs if b[1] == hy and abs(b[0] - hx) <= 1), None)
+        if struck:
+            bugs.remove(struck); score += 1; boom = (struck[0], struck[1], 3)
+        rows = []
+        for r in range(h):
+            items = [(b[0], "🐛", GREEN) for b in bugs if b[1] == r]
+            if boom and boom[1] == r: items.append((boom[0], "💥", RED))
+            if r == hy: items.append((hx, "🔨", CORAL))
+            rows.append(_place(inner, items, color))
+        if boom: boom = None if boom[2] <= 1 else (boom[0], boom[1], boom[2] - 1)
+        yield rows, f"🐛 squash · {score}/{TARGET} · {esc} escaped"
+    won = score >= TARGET
+    result["won"] = won
+    end = "🏆 all clear!" if won else "🐛 they got away"
+    for _ in range(6):
+        yield rows, f"{end}  {score}/{TARGET}"
+
 def play(name, inner, h, color, result=None):
-    return {"dino": dino, "pong": pong, "snake": snake}.get(name, dino)(inner, h, color, result)
+    return {"dino": dino, "pong": pong, "snake": snake, "crossing": crossing,
+            "invaders": invaders, "breakout": breakout,
+            "squash": squash}.get(name, dino)(inner, h, color, result)
