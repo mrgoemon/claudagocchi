@@ -117,6 +117,7 @@ API key (`crab --setkey` or an `ANTHROPIC_API_KEY` env var).
 | `crab --setkey` | Save an Anthropic API key so the crab can chat |
 | `crab --welcome` | Static box, no live data |
 | `crab --sheet` | 🆕 Every life stage in every pose (for eyeballing sprites) |
+| `crab --old` | 🆕 Run the v1.0 crab from `legacy/` (see below) |
 | `crab --no-color` | No coral tint |
 
 Set `CRAB_STAGE=<stage>` to force a life stage without editing your save — handy
@@ -125,6 +126,20 @@ for seeing the egg, or any adult form, on demand:
 ```sh
 CRAB_STAGE=architect crab
 ```
+
+## The old crab
+
+`crab --old` runs the frozen v1.0 crab — the original coral 9×3 sprite, four stat
+lines, no life cycle. Flags pass straight through (`crab --old --status`).
+
+It gets **its own home** at `~/.claude-crab/v1-home/`, seeded once from your real
+save so it still looks like your crab, with `~/.claude` symlinked through so token
+usage keeps counting. After that it lives a separate life.
+
+That isolation is the point: v1.0 hardcodes `~/.claude-crab` and runs the old
+30/hr hunger clock, so pointing it at your real save would empty your crab's belly
+just by looking at it. It gets a different `HOME` rather than a patch, because
+`legacy/` is only useful if it stays exactly as it shipped.
 
 ## Admin mode
 

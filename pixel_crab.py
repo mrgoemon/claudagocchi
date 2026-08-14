@@ -32,6 +32,7 @@ import threading
 import queue
 import dataclasses
 import subprocess
+import pathlib
 
 import crab_state as cs
 import crab_chat as cc
@@ -1373,8 +1374,49 @@ def _confirm_graduation(state):
     except (EOFError, KeyboardInterrupt):
         return False
 
+LEGACY_DIR = pathlib.Path(__file__).resolve().parent / "legacy" / "v1.0"
+LEGACY_HOME = pathlib.Path.home() / ".claude-crab" / "v1-home"
+
+def _run_legacy(rest):
+    """Launch the frozen v1.0 crab (`crab --old`).
+
+    v1.0 hardcodes ~/.claude-crab and runs the old 30/hr hunger clock, so pointing
+    it at your real save would empty your crab's belly just by looking at it. It
+    gets its own HOME instead of a patch, because the whole point of legacy/ is
+    that it stays exactly as it shipped.
+
+    That home is seeded once so it still feels like your crab: ~/.claude is
+    symlinked through (token usage keeps reading), and config.json + state.json
+    are copied on first run. After that the v1.0 crab lives its own separate life.
+    """
+    entry = LEGACY_DIR / "pixel_crab.py"
+    if not entry.exists():
+        print(f"v1.0 isn't in this checkout (looked in {LEGACY_DIR})")
+        return 1
+    box = LEGACY_HOME / ".claude-crab"
+    first = not box.exists()
+    box.mkdir(parents=True, exist_ok=True)
+    link = LEGACY_HOME / ".claude"
+    if not link.exists():
+        try:
+            link.symlink_to(pathlib.Path.home() / ".claude")   # so tokens still count
+        except Exception:
+            pass
+    for src, name in ((cs.CONFIG, "config.json"), (cs.STATE, "state.json")):
+        dst = box / name
+        if src.exists() and not dst.exists():
+            dst.write_text(src.read_text())
+    if first:
+        print(f"  starting v1.0 with its own save at {box}")
+        print(f"  (seeded from your crab; your real one is left alone)\n")
+        sys.stdout.flush()        # the child writes straight to the tty; don't trail it
+    return subprocess.call([sys.executable, str(entry), *(rest or ["--animate"])],
+                           env=dict(os.environ, HOME=str(LEGACY_HOME)))
+
 def main(argv):
     color = "--no-color" not in argv
+    if "--old" in argv:                             # the v1.0 crab, frozen in legacy/
+        return _run_legacy([a for a in argv if a != "--old"])
     if "--admin" in argv:                           # the sandbox: every scenario, on demand
         i = argv.index("--admin")
         nxt = argv[i + 1] if i + 1 < len(argv) and not argv[i + 1].startswith("-") else None

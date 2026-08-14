@@ -19,19 +19,20 @@ import crab_admin
 REAL_STATE = pathlib.Path.home() / ".claude-crab" / "state.json"
 
 # Byte-comparing the real save is useless as a guard: a live `crab --animate`
-# rewrites it every four seconds. What actually proves admin mode stayed in its
-# sandbox is that none of v2.0's keys ever appear in it.
-V2_KEYS = ("version", "health", "generation", "graveyard", "career", "form")
-
-
-def v2_keys_in_real_save():
+# rewrites it every four seconds, and vitals legitimately drift the whole time.
+# What no ordinary run ever changes is the crab's IDENTITY -- its name, which
+# generation it is, and how many ancestors it has. Admin mode kills, graduates and
+# hatches crabs constantly, so if any of those moved, a scenario escaped its
+# sandbox. (An earlier version of this guard looked for v2.0 keys in the save,
+# which stopped meaning anything the moment the real crab was itself on v2.0.)
+def identity():
     if not REAL_STATE.exists():
-        return []
+        return None
     try:
         s = json.loads(REAL_STATE.read_text())
     except Exception:
-        return []
-    return [k for k in V2_KEYS if k in s]
+        return None
+    return (s.get("name"), s.get("generation"), len(s.get("graveyard", [])))
 
 
 def run(scenario, seconds):
@@ -68,7 +69,7 @@ def run(scenario, seconds):
 
 
 def main():
-    leaked_before = v2_keys_in_real_save()
+    before = identity()
     bad = 0
     for name, (_desc, secs) in crab_admin.SCENARIOS.items():
         wait = 6 if secs else 4          # long scenarios only need a sample
@@ -86,9 +87,10 @@ def main():
             i = text.index("Traceback")
             print("   " + text[i:i + 900].replace("\n", "\n   "))
 
-    leaked = v2_keys_in_real_save()
-    clean = not leaked and not leaked_before
-    print(f"\nv2.0 keys leaked into the real save: {leaked or 'none'}")
+    after = identity()
+    clean = before == after
+    print(f"\nreal crab identity: {before} -> {after}"
+          f"{'' if clean else '   *** ESCAPED SANDBOX ***'}")
     print("all admin scenarios clean:", bad == 0 and clean)
     return 1 if (bad or not clean) else 0
 
