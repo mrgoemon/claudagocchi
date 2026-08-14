@@ -41,6 +41,7 @@ import crab_tokens as ctok
 import crab_sessions as csess
 import crab_hall
 import crab_admin
+import crab_commands as ccmd
 
 CORAL = (200, 126, 95)
 EYE   = (24, 24, 28)
@@ -232,12 +233,15 @@ def _handle_keys(buf, data):
     return buf, submit
 
 def _input_line(buf, inner, color, ok):
-    """The chat input row drawn under the box."""
-    if not ok:
-        s = "  chat: set ANTHROPIC_API_KEY + `pip install anthropic`"
-    else:
+    """The chat input row drawn under the box. Commands work with or without an
+    API key, so the hint always offers `help` -- only conversation needs a key."""
+    if buf:
         shown = buf[-(inner - 4):] if len(buf) > inner - 4 else buf
-        s = ("  › " + shown + "▏") if buf else "  › talk to me · Enter to send"
+        s = "  › " + shown + "▏"
+    elif ok:
+        s = "  › talk to me, or type `help` · Enter to send"
+    else:
+        s = "  › type `help` for commands · chat needs ANTHROPIC_API_KEY"
     s = s[:inner + 2]
     return (fg((150, 150, 160)) + s + RESET) if color else s
 
@@ -1062,6 +1066,7 @@ def animate(color=True, fps=10, name="kh"):
     commit_seen = None                            # SHAs already gifted (None = baseline first)
     today, strk = {"added": 0, "commits": 0}, 0   # until the first poll fills them in
     dying, death_at = False, 0.0                  # mid-death-scene, and when it ends
+    pet_at = 0.0                                  # last pet, for the affection cooldown
 
     # --- chat: read the keyboard (raw mode) and talk to Claude on a worker thread
     import select, termios, tty
@@ -1303,20 +1308,49 @@ def animate(color=True, fps=10, name="kh"):
                 if r:
                     chat_buf, submit = _handle_keys(chat_buf, os.read(fd, 256))
                     if submit and submit.strip():
-                        cmd = submit.strip().lower()
-                        wants_game = (
-                            cmd in ("game", "play", "minigame", "play a game",
-                                    "make a game", "code a game", "play game")
-                            or cmd in cg.GAMES
-                            or (cmd.split()[0] in ("play", "make", "code", "start")
-                                and (any(g in cmd for g in cg.GAMES) or "game" in cmd)))
-                        if wants_game:                 # summon a game now (no key needed)
-                            named = [g for g in cg.GAMES if g in cmd]
-                            game_req = (named[0] if named else random.choice(cg.GAMES),
-                                        "you got it, let's play!")
-                            last_game = 0.0            # bypass the cooldown for a manual ask
+                        # Commands first: they run locally and need no API key.
+                        # Anything unrecognised falls through to Claude as chat.
+                        res = ccmd.handle(submit, {"state": state, "cfg": cfg,
+                                                   "sess": sess_box["v"], "color": color,
+                                                   "pet_at": pet_at})
+                        if res:
+                            # A running minigame owns the whole window, including
+                            # the bubble, so a reply would vanish into it. If you
+                            # are typing commands you want the crab's attention,
+                            # not to watch it finish breakout -- so cut the scene.
+                            if res.get("say") or res.get("page"):
+                                if scene is not None:
+                                    scene, last_game = None, now
+                                if not res.get("game"):
+                                    game_req = None
+                            if "pet_at" in res:
+                                pet_at = res["pet_at"]
+                            if res.get("save"):
+                                cs.save_state(state)
+                                hoard_g = cs.hoard_glyphs(cs.hoard_summary(state))
+                                morph = MORPHS[cs.life_stage(state)]
+                                ground = ground_y(stage_h, morph)
+                            if res.get("game"):
+                                game_req, last_game = res["game"], 0.0
+                            if res.get("react") == "celebrate":
+                                pending = _celebrate(pos["x"], ground)
+                            elif res.get("react") == "stretch":
+                                pending = _do_stretch(pos["x"], ground)
+                            if res.get("say"):
+                                temp_speech = res["say"]
+                                temp_until = now + max(5.0, len(res["say"]) / TYPE_CPS + 3)
+                            if res.get("page"):
+                                # Full-screen output. The window's height is fixed,
+                                # so a page can't be squeezed in -- it takes over,
+                                # then `first` forces a clean redraw from scratch
+                                # instead of a cursor-up onto a screen that moved.
+                                _show_page(res["page"], fd)
+                                first = True
+                            if res.get("quit"):
+                                break
                         elif not chat_ok:
-                            temp_speech, temp_until = "(set ANTHROPIC_API_KEY to chat!)", now + 5
+                            temp_speech = "type 'help' for commands, or set ANTHROPIC_API_KEY to chat"
+                            temp_until = now + 6
                         else:
                             chat_history.append({"role": "user", "content": submit.strip()})
                             del chat_history[:-10]              # keep recent turns only
@@ -1360,6 +1394,26 @@ def _status_frame(color):
     # stage_h tracks the morph: a shorter stage silently drops the leg row.
     return render_window(color, stage_h=morph.h, speech=sp, stats=stats,
                          hoard=hoard_g, morph=morph)
+
+def _show_page(text, fd):
+    """Hand the whole screen to `text` until a key is pressed.
+
+    Used for command output that can't fit the speech bubble (Memory Lane, the
+    token report). The animation's in-place redraw assumes the screen hasn't
+    moved under it, so the caller must set `first = True` afterwards to force a
+    full redraw rather than a cursor-up into the middle of the page."""
+    import select
+    sys.stdout.write("\033[2J\033[H")
+    sys.stdout.write(text.rstrip("\n") + "\n\n  [any key to go back]\n")
+    sys.stdout.flush()
+    if fd is not None:
+        select.select([sys.stdin], [], [], None)     # block until a keypress
+        try:
+            os.read(fd, 256)
+        except Exception:
+            pass
+    sys.stdout.write("\033[2J\033[H")
+    sys.stdout.flush()
 
 def _confirm_graduation(state):
     """Graduation is irreversible from the crab's point of view, so say plainly

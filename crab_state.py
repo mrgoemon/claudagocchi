@@ -347,19 +347,25 @@ def graduate(state, now=None):
     rebirth(state, now)
     return m
 
+# Bookkeeping that belongs to YOU and your repos, not to the crab. It has to
+# survive a rebirth or the new crab re-fires everything the old one already
+# handled: today's finished quests celebrate again, PRs you opened last week
+# arrive as fresh gifts, streak milestones throw a second party, and the
+# monotonic all-time token counter dumps one enormous feed into a newborn.
+CARRIES_OVER = ("graveyard", "tokens_seen", "quests_date", "quests_done",
+                "break_taken", "pr_gifted", "pr_cache", "celebrated_ms",
+                "pushed", "tok_today_cache")
+
 def rebirth(state, now=None):
-    """A fresh egg, a new name, an empty hoard. The graveyard and `tokens_seen`
-    survive -- the latter because it is a monotonic all-time counter, and
-    resetting it would dump one enormous feed into the new crab."""
+    """A fresh egg: new name, empty hoard, blank career. Everything in
+    CARRIES_OVER is kept -- see the note there for why each one matters."""
     now = now or _now()
-    keep_graveyard = state.get("graveyard", [])
-    keep_tokens = state.get("tokens_seen")
+    carried = {k: state[k] for k in CARRIES_OVER if k in state}
     fresh = default_state()
     fresh["born"] = fresh["last_seen"] = fresh["session_start"] = fresh["last_break"] = now
     fresh["generation"] = state.get("generation", 1) + 1
-    fresh["graveyard"] = keep_graveyard
-    fresh["tokens_seen"] = keep_tokens
-    fresh["name"] = pick_name(fresh)
+    fresh.update(carried)
+    fresh["name"] = pick_name(fresh)          # after carrying: skips ancestors' names
     state.clear()
     state.update(fresh)
     return state

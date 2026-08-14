@@ -37,7 +37,7 @@ dies for real. Every crab you lose is kept in Memory Lane.
 - **It can die.** 🆕 An empty belly is survivable; *staying* empty is not. Go
   quiet for about half a day and it starts starving; keep it up and after roughly
   five days it's gone. Death is permanent — the hoard resets and a new egg hatches.
-  (`crab --undo-death` restores the last one if something goes wrong.)
+  (`crab --undo` restores the last one if something goes wrong.)
 - **It grows.** 🆕 egg → hatchling → juvenile → adult, and then into one of four
   adult forms earned from how you actually code:
 
@@ -70,10 +70,11 @@ dies for real. Every crab you lose is kept in Memory Lane.
   drops on the far side, the crab reacts, walks over, and adds it to a growing
   **hoard** (crumb → shell → fish → feast → treasure). Opening a PR gets a cheer.
 - **Nudges** — a gentle "let's stretch" after a long session.
-- **Chat** — type at the bottom of the window and the crab talks back (Claude API,
-  Haiku by default). Enable it with `pip install anthropic` plus a key — an
-  `ANTHROPIC_API_KEY` env var *or* `crab --setkey`. Without it, chat stays off and
-  everything else works.
+- **Chat and commands** 🆕 — the line under the window is both. `help`, `stats`,
+  `hall`, `pet`, `graduate` and friends run locally and need **no API key**;
+  anything else is said to the crab, and that part does (Claude API, Haiku by
+  default — `pip install anthropic` plus `ANTHROPIC_API_KEY` or `crab --setkey`).
+  Without a key chat stays off and every command still works.
 - **Minigames** — now and then the crab "codes" a tiny game (a 💻 typing build-up)
   and then watches it play *itself*, right inside the window: a dino runner,
   pong, snake, a crab dodging traffic (`crossing`), space `invaders`, `breakout`,
@@ -126,6 +127,30 @@ for seeing the egg, or any adult form, on demand:
 ```sh
 CRAB_STAGE=architect crab
 ```
+
+## Talking to it
+
+The line under the window is a command line as well as a chat box. Commands run
+locally and instantly and **need no API key**; anything unrecognised is said to
+the crab as conversation, which is the part that needs one.
+
+Type `help` for the list. In short:
+
+| | |
+|---|---|
+| `stats` `stage` `hoard` | vitals; what it is and what's next; what you've given it |
+| `hall` `sessions` `tokens` | full-screen: Memory Lane, your other agents, token usage |
+| `pet` `stretch` `play [game]` | say hello; take a break; a minigame now |
+| `name <x>` `alerts on\|quiet\|off` | rename it; set how loudly it flags a blocked session |
+| `graduate` | retire it — asks you to confirm by typing its name |
+| `help` `quit` | |
+
+Short answers appear in the speech bubble. `hall`, `sessions` and `tokens` need
+more room than a bubble, so they take over the screen until you press a key —
+the window's height is fixed at startup and can't grow a line to make room.
+
+Typing a command while the crab is mid-minigame cuts the game short: if you're
+issuing commands you want its attention, not to watch it finish breakout.
 
 ## The old crab
 
@@ -184,6 +209,7 @@ nothing is faked except the rate.
 - `crab_sessions.py` — 🆕 reads your live Claude Code / Codex sessions.
 - `crab_hall.py` — 🆕 renders Memory Lane.
 - `crab_admin.py` — 🆕 the sandboxed scenario runner behind `--admin`.
+- `crab_commands.py` — 🆕 commands typed into the chat line.
 - `legacy/` — 🆕 frozen snapshots of earlier versions. Nothing imports it; see
   [`legacy/README.md`](legacy/README.md).
 - `crab_chat.py` — the Claude API layer (chat replies + the minigame director).
@@ -211,6 +237,7 @@ COLUMNS=100 python3 goldens.py check    # sprite/window regression hashes
 COLUMNS=100 python3 goldens.py sweep    # every morph x position x pose: same size?
 python3 ptycheck.py                     # runs the real animation, asserts one frame height
 python3 admincheck.py                   # every admin scenario runs, and stays in its sandbox
+python3 cmdcheck.py                     # types commands into the live UI, checks the replies
 ```
 
 ### Upgrading from v1.0
