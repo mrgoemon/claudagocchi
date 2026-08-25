@@ -65,7 +65,9 @@ def _proc_start_epoch(pid):
         if not out:
             return None
         return time.mktime(time.strptime(out, PS_FMT))
-    except Exception:
+    except (OSError, subprocess.SubprocessError):    # no ps, or it hung (TimeoutExpired)
+        return None
+    except (ValueError, OverflowError):              # ps printed a shape we don't parse
         return None
 
 
@@ -80,7 +82,9 @@ def _is_live(pid, proc_start):
         return False
     try:
         os.kill(pid, 0)
-    except Exception:
+    except OSError:                          # gone (ProcessLookupError) or not ours
+        return False
+    except TypeError:                        # pid came out of the log; may not be an int
         return False
     if not proc_start:
         return True                          # process is up; nothing to cross-check
@@ -89,7 +93,7 @@ def _is_live(pid, proc_start):
         return False
     try:
         js_epoch = calendar.timegm(time.strptime(proc_start, PS_FMT))
-    except Exception:
+    except (ValueError, TypeError):          # wrong format, or not a string at all
         return True                          # unparseable: trust the live PID
     return abs(ps_epoch - js_epoch) < PROC_START_TOLERANCE
 
@@ -97,7 +101,7 @@ def _is_live(pid, proc_start):
 def _short_cwd(cwd):
     try:
         return pathlib.Path(cwd).name or cwd
-    except Exception:
+    except (TypeError, ValueError):          # cwd is None, or not a path-like at all
         return cwd or "?"
 
 
@@ -106,12 +110,16 @@ def scan_claude(skip_pid=None):
     out = []
     try:
         files = sorted(CLAUDE_SESSIONS.glob("*.json"))
-    except Exception:
+    except OSError:                          # no ~/.claude/sessions, or unreadable
         return out
     for f in files:
         try:
             rec = json.loads(f.read_text())
-        except Exception:
+        except OSError:                      # the session ended and took its file
+            continue
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue                         # half-written: it's rewritten every turn
+        if not isinstance(rec, dict):        # valid json, wrong shape; not ours to read
             continue
         pid = rec.get("pid")
         if not pid or pid == skip_pid:
@@ -138,7 +146,7 @@ def _newest_rollout():
     try:
         files = glob.glob(str(CODEX_SESSIONS / "*" / "*" / "*" / "rollout-*.jsonl"))
         return max(files, key=os.path.getmtime) if files else None
-    except Exception:
+    except OSError:                          # no ~/.codex, or a file vanished mid-scan
         return None
 
 
@@ -167,8 +175,8 @@ def scan_codex():
             for line in fh:
                 try:
                     o = json.loads(line)
-                except Exception:
-                    continue
+                except json.JSONDecodeError:
+                    continue                 # the tail line is still being written
                 payload = o.get("payload") or {}
                 t = payload.get("type")
                 if t == "task_started":
@@ -179,6 +187,10 @@ def scan_codex():
                     session_id = payload.get("session_id") or session_id
                     cwd = payload.get("cwd") or cwd
     except Exception:
+        # Deliberately broad. Unlike Claude Code's status file, a rollout record has
+        # no contract we can lean on -- `payload` is whatever Codex wrote, so any
+        # entry may not be an object at all. Codex rows are a nice-to-have that can
+        # never raise an alert, so dropping the lot beats guessing at exception types.
         return []
     return [{
         "source": "codex",
@@ -202,8 +214,10 @@ def scan_hook():
     """
     try:
         return json.loads(CLAUDE_HOOK_STATE.read_text())
-    except Exception:
+    except OSError:                          # the hook isn't installed; that's normal
         return None
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None                          # caught it mid-write; the poll covers us
 
 
 DEMO = None      # admin mode injects a canned reading here; None in normal use

@@ -86,13 +86,18 @@ dies for real. Every crab you lose is kept in Memory Lane.
 ## Install
 
 ```sh
-git clone <this-repo> ~/claude-crab
-ln -s ~/claude-crab/crab ~/.local/bin/crab   # or put the repo's ./crab on your PATH
+git clone <this-repo> && cd claude-crab      # clone it wherever you keep repos
+ln -s "$PWD/crab" ~/.local/bin/crab          # or put the repo's ./crab on your PATH
 crab --watch /path/to/your/project           # track a repo (remembered globally)
 crab --me                                    # count only your commits
 pip install anthropic && crab --setkey       # optional: turn on chat (paste your key)
 crab                                         # launch the crab (Ctrl-C to stop)
 ```
+
+The repo can live anywhere: `./crab` resolves its own directory, so the symlink
+is the only thing that has to know where it is — move the clone and re-point the
+symlink. Your crab itself is somewhere else entirely and doesn't move: the save
+always lives in `~/.claude-crab/`, whatever path the code is checked out at.
 
 Requirements: **python3**, **git**, and the **GitHub CLI (`gh`)**, authenticated,
 for PR detection. Chat is optional and adds the **`anthropic`** package plus an
@@ -230,7 +235,7 @@ height, forever — a taller crab is absorbed by lowering it on the stage, never
 adding a row, and the stat block always has the same number of lines even when it
 has nothing to say. Break this and the display tears for the rest of the session.
 
-Two harnesses guard it, both dependency-free:
+Four harnesses guard it, all dependency-free:
 
 ```sh
 COLUMNS=100 python3 goldens.py check    # sprite/window regression hashes
@@ -240,6 +245,15 @@ python3 admincheck.py                   # every admin scenario runs, and stays i
 python3 cmdcheck.py                     # types commands into the live UI, checks the replies
 ```
 
+All four run on every push and pull request
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)), against a throwaway
+`HOME` so the runner's crab is never yours.
+
+`cmdcheck` sets `CRAB_NO_DIRECTOR=1`, which silences only the *self-started*
+minigame — one firing mid-run would steal the speech bubble and make a reply
+unassertable. Typing `game` or `play <name>` still works, so the games stay
+covered.
+
 ### Upgrading from v1.0
 
 Nothing is lost. Your existing crab keeps its hoard, history and age, and is
@@ -248,4 +262,10 @@ placed at the life stage it already earned rather than being sent back to an egg
 earned. The v1.0 source itself is frozen under [`legacy/v1.0/`](legacy/) and can
 still be run on its own; the current app never refers to it.
 
-> `crab.py` is the original line-art prototype, kept for posterity.
+## License
+
+MIT — see [`LICENSE`](LICENSE). © 2026 Kengo Hotta.
+
+> [`legacy/crab_prototype.py`](legacy/crab_prototype.py) is the original line-art
+> prototype, kept for posterity. `claude_dance.py` is an unrelated one-off that
+> came along for the ride — `python3 claude_dance.py` and Claude dances.

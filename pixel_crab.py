@@ -1101,7 +1101,12 @@ def animate(color=True, fps=10, name="kh"):
                 dir_q.put((random.choice(cg.GAMES),
                            random.choice(["ooh, let me build something!",
                                           "time to code a lil game!", "watch this 🦀"])))
-    threading.Thread(target=_director, daemon=True).start()
+    # CRAB_NO_DIRECTOR silences only the *automatic* game trigger, for the
+    # harnesses: a game that starts on its own mid-run steals the speech bubble
+    # and makes a command's reply unassertable. Typing `game`/`play <name>` is
+    # untouched, so the games themselves stay covered.
+    if not os.environ.get("CRAB_NO_DIRECTOR"):
+        threading.Thread(target=_director, daemon=True).start()
 
     # --- token worker: scan Claude Code's logs off the render loop (~every 45s)
     tok_box = {"today": state.get("tok_today_cache", 0), "all": 0}

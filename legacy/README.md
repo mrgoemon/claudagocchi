@@ -4,18 +4,23 @@ Frozen snapshots of earlier Claudagocchi. **Nothing here is imported, referenced
 or run by the current app** — it's kept so you can go back and look at, or run,
 an older crab if you want to.
 
-| version | what it was |
+| what | it was |
 |---|---|
 | [`v1.0/`](v1.0/) | The immortal crab. Vitals decayed but never ran out; one fixed 9×3 sprite; no age, no life stage, no death. |
+| [`crab_prototype.py`](crab_prototype.py) | Older still, and not a release: the line-art crab from before there was a Tamagotchi at all. A face that changes by mood, rendered once and exited. (It shipped inside v1.0 too, byte for byte, as `v1.0/crab.py`.) |
 
 ## Running it
 
 Each snapshot is self-contained and launches on its own:
 
 ```sh
-legacy/v1.0/crab              # the v1.0 crab, live
-legacy/v1.0/crab --status     # one static frame
+legacy/v1.0/crab                          # the v1.0 crab, live
+legacy/v1.0/crab --status                 # one static frame
+python3 legacy/crab_prototype.py --all    # the prototype's mood sheet
 ```
+
+(The prototype is kept exactly as it was written, so its own `--help` text still
+says `crab.py` — it used to sit at the top of the repo.)
 
 **One caveat:** v1.0 reads and writes the same `~/.claude-crab/state.json` as the
 current version. It will not corrupt anything — it preserves keys it doesn't know

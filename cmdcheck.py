@@ -47,6 +47,9 @@ class Session:
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
             os.environ["COLUMNS"] = "100"
+            # Without this the director starts a game on its own mid-run and its
+            # line lands in the bubble instead of the reply being asserted.
+            os.environ["CRAB_NO_DIRECTOR"] = "1"
             os.execvp("python3", ["python3", "pixel_crab.py", "--animate"])
         self.buf = b""
 

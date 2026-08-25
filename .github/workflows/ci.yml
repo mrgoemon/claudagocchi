@@ -1,0 +1,68 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  harnesses:
+    name: rendering + UI harnesses
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # goldens.py pins COLUMNS because shutil.get_terminal_size() reads it; the
+      # pty harnesses need a terminal type they can drive.
+      COLUMNS: "100"
+      TERM: xterm-256color
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The harnesses read and write ~/.claude-crab. Give the runner a throwaway
+      # HOME so nothing depends on (or leaks into) the checkout, and so `gh` is
+      # unauthenticated -- crab_state._gh() returns "" on a non-zero exit, so PR
+      # detection degrades to empty results rather than failing the run.
+      - name: Use a throwaway HOME
+        run: |
+          mkdir -p "$RUNNER_TEMP/crab-home"
+          echo "HOME=$RUNNER_TEMP/crab-home" >> "$GITHUB_ENV"
+
+      - name: Sprite/window regression hashes
+        run: python3 goldens.py check
+
+      - name: Anti-tear / anti-jag sweep
+        run: python3 goldens.py sweep
+
+      - name: Live animation holds one frame height
+        run: python3 ptycheck.py
+
+      - name: Admin scenarios run and stay sandboxed
+        run: python3 admincheck.py
+
+      # cmdcheck asserts the replies a *lived-in* crab gives: `hoard` needs gifts,
+      # `graduate` needs a crab old enough to retire, `stretch` needs the daily
+      # break quest already done. A fresh HOME hatches an egg with none of that,
+      # so seed a mature save first -- through crab_state's own load/save API, so
+      # this survives changes to the state schema.
+      - name: Seed a mature crab for the command harness
+        run: |
+          python3 - <<'PY'
+          import time
+          import crab_state as cs
+
+          s = cs.load_state()
+          now = time.time()
+          s["born"] = now - 20 * 86400
+          s["hatched"] = True
+          s["form"] = "architect"
+          s["hoard"] = {"count": 5, "net": 400,
+                        "by_tier": {"0": 2, "1": 1, "2": 1, "3": 1}}
+          s["quests_done"] = ["break"]
+          s["quests_date"] = time.strftime("%Y-%m-%d")
+          s["last_break"] = now
+          cs.save_state(s)
+          print("seeded a mature crab for cmdcheck")
+          PY
+
+      - name: Chat-line commands answer correctly
+        run: python3 cmdcheck.py

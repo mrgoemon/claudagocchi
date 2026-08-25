@@ -17,11 +17,13 @@ Pure stdlib. State lives in ~/.claude-crab/{state,config}.json.
 """
 import os
 import re
+import sys
 import json
 import time
 import random
 import datetime
 import subprocess
+import tempfile
 import pathlib
 
 DIR = pathlib.Path.home() / ".claude-crab"
@@ -67,15 +69,96 @@ def _now(): return time.time()
 def _clamp(v, lo=0.0, hi=100.0): return max(lo, min(hi, v))
 
 # --- persistence ------------------------------------------------------------
-def _load(path, default):
+# config.json holds an API key, so the whole directory is ours alone. The modes
+# are re-applied on every save, not just at creation, so saves written before
+# this existed (0644) get tightened the next time the crab breathes.
+DIR_MODE = 0o700
+FILE_MODE = 0o600
+
+def _short(path):
+    """~/.claude-crab/state.json rather than the whole absolute path."""
     try:
-        return json.loads(path.read_text())
+        return "~/" + str(path.relative_to(pathlib.Path.home()))
+    except ValueError:
+        return str(path)
+
+def _quarantine(path):
+    """Move an unreadable save aside instead of letting the next save eat it.
+    Named like the other keepsakes in ~/.claude-crab (state.pre-death.json,
+    state.v1-backup-<stamp>.json). Returns the new path, or None if even that
+    failed."""
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    for n in range(1, 100):                 # two wrecks in one second is still two
+        tag = stamp if n == 1 else f"{stamp}-{n}"
+        dest = path.with_name(f"{path.stem}.corrupt-{tag}{path.suffix}")
+        if not dest.exists():
+            break
+    try:
+        os.replace(path, dest)
+        try:
+            os.chmod(dest, FILE_MODE)       # a wrecked config.json still holds a key
+        except OSError:
+            pass
+        return dest
     except Exception:
+        return None
+
+def _load(path, default):
+    """Missing file -> defaults, silently: that is a first run. A file that EXISTS
+    but won't parse is a different thing entirely -- state.json carries the
+    graveyard, and returning defaults there would hatch a new egg and overwrite
+    every crab you ever raised on the next save. Keep the wreckage and say so."""
+    if not path.exists():
+        return dict(default)
+    try:
+        data = json.loads(path.read_text())
+        if not isinstance(data, dict):
+            raise ValueError(f"expected an object, got {type(data).__name__}")
+        return data
+    except Exception as e:
+        kept = _quarantine(path)
+        print(f"\ncrab: {_short(path)} is damaged and could not be read ({e}).", file=sys.stderr)
+        if kept:
+            print(f"      your old file is kept at {_short(kept)} — nothing was deleted.",
+                  file=sys.stderr)
+            if path == STATE:
+                print("      starting from a fresh save; `crab --undo` restores the last "
+                      "snapshot.", file=sys.stderr)
+        else:
+            print(f"      it could NOT be moved aside — copy {_short(path)} somewhere safe "
+                  "now, it will be overwritten.", file=sys.stderr)
+        print(file=sys.stderr)
         return dict(default)
 
+def _write(path, text):
+    """Atomic write. `_save` runs inside the animation loop, so a Ctrl-C or a crash
+    lands mid-write often enough to matter: a truncate-in-place would leave a
+    half-file where the crab's whole history used to be. Serialize, fsync a temp
+    file in the SAME directory, then rename over the target -- a reader sees the
+    old file or the new one, never a hole."""
+    d = path.parent
+    d.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(d, DIR_MODE)
+    except OSError:
+        pass                                # someone else's dir; the file mode still holds
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:       # takes the fd over, closes it either way
+            os.fchmod(f.fileno(), FILE_MODE)   # BEFORE the rename: replace keeps THIS mode
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:                   # incl. Ctrl-C -- don't litter .tmp files
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
 def _save(path, data):
-    DIR.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2))
+    _write(path, json.dumps(data, indent=2))
 
 def load_config():
     return _load(CONFIG, {"repos": [], "author": None})
@@ -375,7 +458,7 @@ def backup_state():
     put a 60-day crab back if the death logic ever misfires."""
     try:
         if STATE.exists():
-            PRE_DEATH.write_text(STATE.read_text())
+            _write(PRE_DEATH, STATE.read_text())   # the snapshot is worth as much as the save
             return True
     except Exception:
         pass
@@ -384,7 +467,7 @@ def backup_state():
 def restore_state():
     try:
         if PRE_DEATH.exists():
-            STATE.write_text(PRE_DEATH.read_text())
+            _write(STATE, PRE_DEATH.read_text())
             return True
     except Exception:
         pass
