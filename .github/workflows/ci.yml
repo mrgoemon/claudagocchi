@@ -16,7 +16,7 @@ jobs:
       TERM: xterm-256color
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # The harnesses read and write ~/.claude-crab. Give the runner a throwaway
       # HOME so nothing depends on (or leaks into) the checkout, and so `gh` is
