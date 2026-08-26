@@ -789,6 +789,16 @@ def _boot_wave(x, ground, fps):
     cooldown = [(x, ground, pose(), None) for _ in range(span)]              # still, settling
     return wave + cooldown
 
+def _wake_scene(x, ground, fps):
+    """CRAB_INTRO opening for the launch video: asleep and motionless, then a
+    double blink awake, then a short open-eyed hold. Fixed durations so a
+    recording's zoom keyframes can be timed against it."""
+    span = max(1, int(fps))
+    return ([(x, ground, pose(eye_open=False), None)] * (span * 2) +   # asleep 2.0s
+            [(x, ground, pose(), None)] * 2 +                          # eyes crack open
+            [(x, ground, pose(eye_open=False), None)] * 2 +            # ...and shut again
+            [(x, ground, pose(), None)] * (span * 3 // 5))             # awake, hold 0.6s
+
 def _celebrate(x, ground):
     """A happy in-place bounce for commits / completed quests. 4-tuples: (x,y,frame,drop)."""
     seq = []
@@ -1063,6 +1073,14 @@ def animate(color=True, fps=10, name="kh"):
     cur_stats = list(STATS)
     gift_queue = []                               # gifts waiting to be SHOWN (one at a time)
     pending = _boot_wave(pos["x"], ground, fps)   # one-hand wave + 1s cooldown, every launch
+    # CRAB_INTRO: the launch-video opening. The crab sleeps ~2s, blinks awake,
+    # then the normal boot wave runs -- and the bubble stays "..." until the
+    # eyes open so the welcome line typewriters right as it wakes. Fixed
+    # durations, so video/make_video.sh can hard-code its zoom keyframes.
+    if os.environ.get("CRAB_INTRO"):
+        wake = _wake_scene(pos["x"], ground, fps)
+        pending = wake + pending
+        temp_speech, temp_until = "...", time.time() + len(wake) / max(fps, 1)
     commit_seen = None                            # SHAs already gifted (None = baseline first)
     today, strk = {"added": 0, "commits": 0}, 0   # until the first poll fills them in
     dying, death_at = False, 0.0                  # mid-death-scene, and when it ends
@@ -1105,7 +1123,8 @@ def animate(color=True, fps=10, name="kh"):
     # harnesses: a game that starts on its own mid-run steals the speech bubble
     # and makes a command's reply unassertable. Typing `game`/`play <name>` is
     # untouched, so the games themselves stay covered.
-    if not os.environ.get("CRAB_NO_DIRECTOR"):
+    # (CRAB_INTRO also implies no director: a surprise game mid-take ruins it.)
+    if not os.environ.get("CRAB_NO_DIRECTOR") and not os.environ.get("CRAB_INTRO"):
         threading.Thread(target=_director, daemon=True).start()
 
     # --- token worker: scan Claude Code's logs off the render loop (~every 45s)
