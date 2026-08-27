@@ -9,7 +9,9 @@ up; the camera zoom is done in post with ffmpeg.
    directory, launch `claude` there once by hand and accept, quit, then run the
    capture again — and note the banner shows whichever directory Claude was
    started in, so capture from the repo you want on camera.
-1. Set up a terminal window: ≥100 cols, ~18pt font, dark theme, Retina display.
+1. Set up a terminal window: **exactly 100x40** (the capture is laid out for
+   that size and Claude positions its status line by absolute row), ~18pt
+   font, dark theme, Retina display.
 2. `./video/record.sh rect` — click that window to cache its screen region.
 3. `./video/record.sh` — after the countdown, run `python3 video/intro.py` in
    the window. 26s later, `video/take.mov` exists.

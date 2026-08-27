@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Capture the real Claude Code launch banner to video/claude_banner.ansi.
+"""Capture the real Claude Code launch screen to video/claude_banner.ansi.
 
 intro.py replays those bytes verbatim, so the video's opening screen is
 whatever Claude actually prints -- no hand-copied ASCII art to get subtly
 wrong, and re-running this after a Claude upgrade refreshes it.
 
-Claude only draws the full splash art when the terminal has >= 30 rows, so the
-pty here is forced to 100x40 regardless of the window you run it from.
+Claude lays its screen out for the terminal it starts in and positions the
+status line by absolute row, so this captures at 100x40 and the window you
+record in has to be that size too. Under 30 rows Claude collapses the banner to
+a single line instead of the full mascot header.
 """
 import fcntl
 import os
@@ -26,7 +28,9 @@ COLS, ROWS = 100, 40
 # trust?" prompt is what gets captured instead; accept it once by hand and
 # re-run. Override with: capture_banner.py <dir>
 DEFAULT_CWD = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SETTLE = 1.5          # stop once nothing new has arrived for this long
+SETTLE = 3.0          # stop once nothing new has arrived for this long; long
+                      # enough that the status line finishes connecting, so the
+                      # replay ends on the settled screen rather than a spinner
 LIMIT = 25.0          # hard cap on how long we wait for Claude to start
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "claude_banner.ansi")
 
@@ -80,32 +84,9 @@ def capture(cwd):
     return buf or None
 
 
-def first_paint(buf):
-    """Cut everything after Claude's initial draw.
-
-    Once the banner is up, the status line keeps repainting itself -- a
-    "connecting" spinner settling, the PR indicator arriving, the window title
-    changing. Those are cursor-positioned partial updates that assume a
-    full-screen buffer, so replaying them just makes the intro flicker. The
-    first cursor-show after the version string marks the end of the first
-    complete paint, which is the frame worth keeping.
-    """
-    # Claude positions each word with its own column jump, so the header reads
-    # `Claude\033[19GCode` in the byte stream -- match on the version instead.
-    ver = buf.find(b"v2.")
-    if ver < 0:
-        ver = buf.find(b"Claude")
-    if ver < 0:
-        return buf
-    end = buf.find(b"\033[?25h", ver)
-    return buf[:end + len(b"\033[?25h")] if end > 0 else buf
-
-
 def main():
     cwd = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_CWD
     buf = capture(cwd)
-    if buf:
-        buf = first_paint(buf)
     if buf and b"safety check" in buf:
         print(f"Claude asked whether it trusts {cwd}, so that prompt got captured\n"
               f"instead of the banner. Run `claude` there once by hand, accept, quit,\n"

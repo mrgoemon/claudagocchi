@@ -10,7 +10,8 @@
 # the window, then `python3 video/intro.py` inside it.
 #
 # Setup checklist (do once before recording):
-#   - Terminal window >= 100 columns wide, ~24 rows
+#   - Terminal window exactly 100x40 -- must match capture_banner.py's pty,
+#     since Claude positions its status line by absolute row
 #   - Font ~18pt, a dark theme, no transparency
 #   - Retina display (digital zoom in post stays sharp)
 #   - Hide anything distracting behind/around the window
