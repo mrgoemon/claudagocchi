@@ -789,15 +789,20 @@ def _boot_wave(x, ground, fps):
     cooldown = [(x, ground, pose(), None) for _ in range(span)]              # still, settling
     return wave + cooldown
 
+INTRO_STILL_SEC = 4.0        # the held "screenshot" before the blink
+
 def _wake_scene(x, ground, fps):
-    """CRAB_INTRO opening for the launch video: asleep and motionless, then a
-    double blink awake, then a short open-eyed hold. Fixed durations so a
-    recording's zoom keyframes can be timed against it."""
+    """CRAB_INTRO opening for the launch video.
+
+    The crab holds a frame-for-frame still -- eyes open, ordinary pose, exactly
+    what a screenshot of the app looks like -- so the viewer reads it as a
+    static image. Then it blinks, which is the moment it turns out to be alive.
+    Fixed durations, so the recording's zoom keyframes can be timed against it.
+    """
     span = max(1, int(fps))
-    return ([(x, ground, pose(eye_open=False), None)] * (span * 2) +   # asleep 2.0s
-            [(x, ground, pose(), None)] * 2 +                          # eyes crack open
-            [(x, ground, pose(eye_open=False), None)] * 2 +            # ...and shut again
-            [(x, ground, pose(), None)] * (span * 3 // 5))             # awake, hold 0.6s
+    return ([(x, ground, pose(), None)] * int(span * INTRO_STILL_SEC) +
+            [(x, ground, pose(eye_open=False), None)] * 2 +   # the blink
+            [(x, ground, pose(), None)] * (span * 3 // 10))   # beat, then _boot_wave
 
 def _celebrate(x, ground):
     """A happy in-place bounce for commits / completed quests. 4-tuples: (x,y,frame,drop)."""
@@ -1073,14 +1078,21 @@ def animate(color=True, fps=10, name="kh"):
     cur_stats = list(STATS)
     gift_queue = []                               # gifts waiting to be SHOWN (one at a time)
     pending = _boot_wave(pos["x"], ground, fps)   # one-hand wave + 1s cooldown, every launch
-    # CRAB_INTRO: the launch-video opening. The crab sleeps ~2s, blinks awake,
-    # then the normal boot wave runs -- and the bubble stays "..." until the
-    # eyes open so the welcome line typewriters right as it wakes. Fixed
-    # durations, so video/make_video.sh can hard-code its zoom keyframes.
+    # CRAB_INTRO: the launch-video opening. The crab holds a still for
+    # INTRO_STILL_SEC with an EMPTY bubble -- so the frame is indistinguishable
+    # from a screenshot -- then blinks and the boot wave runs. The bubble stays
+    # blank for exactly the still, so the greeting starts typing on the blink.
+    intro_lines, intro_blank = [], 0
     if os.environ.get("CRAB_INTRO"):
         wake = _wake_scene(pos["x"], ground, fps)
         pending = wake + pending
-        temp_speech, temp_until = "...", time.time() + len(wake) / max(fps, 1)
+        # Counted in FRAMES, not seconds: a frame costs a little more than
+        # 1/fps, so a wall-clock deadline expires while the still is still on
+        # screen and the greeting starts typing early.
+        intro_blank = len(wake) - 3      # blank through the still and the blink
+        idle_speech = "Welcome back, kh!"
+        idle_next = float("inf")         # held until the blink; see intro_blank
+        intro_lines = ["let's start tokenmaxxing 🦀"]   # said after the greeting
     commit_seen = None                            # SHAs already gifted (None = baseline first)
     today, strk = {"added": 0, "commits": 0}, 0   # until the first poll fills them in
     dying, death_at = False, 0.0                  # mid-death-scene, and when it ends
@@ -1255,8 +1267,11 @@ def animate(color=True, fps=10, name="kh"):
                     cs.take_break(state, now)
                     temp_speech, temp_until = cs.speech(state, mood, [], [], True, name), now + 4
                 if now >= idle_next:                      # refresh the idle line periodically
-                    idle_speech = cs.idle_speech(state, mood, pr_stats_box["v"], name)
-                    idle_next = now + ROTATE_SEC
+                    if intro_lines:                       # scripted for the launch video
+                        idle_speech, idle_next = intro_lines.pop(0), now + ROTATE_SEC
+                    else:
+                        idle_speech = cs.idle_speech(state, mood, pr_stats_box["v"], name)
+                        idle_next = now + ROTATE_SEC
                 state["pr_cache"] = pr_stats_box["v"]     # cache for instant next launch
                 # --- evolution seam. Only swap morphs at a quiescent moment: a
                 # half-played scene baked the old `ground` and panel width into its
@@ -1308,6 +1323,10 @@ def animate(color=True, fps=10, name="kh"):
                 else:
                     x, y, frame, emote = next(gen); drop = None
                 disp = temp_speech if now < temp_until else idle_speech
+                if intro_blank > 0:               # launch-video still: no bubble at all
+                    intro_blank, disp = intro_blank - 1, ""
+                    if intro_blank == 0:          # eyes just opened -> greet, then rotate
+                        idle_next = now + 6.0
                 if chat_pending_since is not None and now - chat_pending_since > 3:
                     disp = "hmm…"                 # only after a slow reply; else keep the line
                 disp = _clip(disp, inner - 2 * BUBBLE_PAD)   # keep the bubble off the box edges

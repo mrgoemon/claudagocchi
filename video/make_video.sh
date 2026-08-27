@@ -15,9 +15,11 @@ FPS=30
 
 # ---- timeline (seconds into the recording) ---------------------------------
 T0=1.0                 # when intro.py started, relative to recording start
-CRAB_T=$(echo "$T0 + 4.8" | bc)    # crab frame appears (intro.py timings)
-ZOUT_START=$(echo "$T0 + 7.6" | bc)  # blink is done -> start pulling back
-ZOUT_END=$(echo "$T0 + 10.1" | bc)   # fully zoomed out
+CRAB_T=$(echo "$T0 + 5.1" | bc)      # crab frame appears (intro.py timings)
+# The crab holds a dead-still frame for INTRO_STILL_SEC=4.0s, blinks, then
+# comes to life -- so stay zoomed in through the blink and pull back after.
+ZOUT_START=$(echo "$CRAB_T + 4.4" | bc)
+ZOUT_END=$(echo "$CRAB_T + 6.9" | bc)
 T_FADE=20              # end-card crossfade starts
 TOTAL=23               # final video length
 
