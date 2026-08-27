@@ -14,7 +14,8 @@ import time
 
 FRAME_H = 18
 EYE = "38;2;24;24;28"          # fg(EYE): present only when the eyes are drawn
-STILL = 4.0
+STILL = 4.0            # motionless "screenshot" before the blinks
+AWAKE = 7.0            # still + blinks + the motionless beat after them
 FPS = 10
 
 
@@ -42,24 +43,45 @@ def main():
         pass
 
     text = buf.decode("utf-8", "ignore")
-    frames = text.split("\033[%dA" % FRAME_H)[1:]
+    # Drop the last frame: the capture is cut mid-write when the child is
+    # killed, so it is a partial redraw and compares unequal to everything.
+    frames = text.split("\033[%dA" % FRAME_H)[1:-1]
     codes = sorted({int(c) for c in re.findall(r"\033\[(\d+)A", text)})
 
     eyes = [EYE in f for f in frames]
     still_n = int(STILL * FPS)
-    hold, blink = eyes[:still_n - 2], eyes[still_n - 2:still_n + 3]
+    hold = eyes[:still_n - 2]
+    # Two blinks = two runs of closed-eye frames inside the wake window.
+    window = eyes[still_n - 2:still_n + 12]
+    blinks = len([1 for i, open_ in enumerate(window)
+                  if not open_ and (i == 0 or window[i - 1])])
 
     def speech(fr):
         rows = [re.sub(r"\033\[[0-9;]*[A-Za-z]", "", l) for l in fr.split("\n")]
         return rows[2].strip().strip("│").strip() if len(rows) > 2 else "?"
 
     bubbles = {speech(f) for f in frames[:still_n - 2]}
-    early, late = frames[:still_n - 2], frames[still_n + 4:]
+    early, late = frames[:still_n - 2], frames[still_n + 10:]
+    said = []
+    for f in frames:
+        s = speech(f)
+        if s and (not said or not said[-1].startswith(s)):
+            said.append(s)
+    def stage(fr):     # the crab's rows, text only -- changes if it moves
+        rows = [re.sub(r"\033\[[0-9;]*[A-Za-z]", "", l) for l in fr.split("\n")]
+        return "\n".join(rows[4:9])
+
+    # From the last blink to the end of the wake: awake, speaking, not moving.
+    awake = frames[still_n + 10:int((STILL + AWAKE) * FPS)]
     checks = [
         ("frame height constant", codes == [FRAME_H]),
+        ("motionless while it speaks",
+         bool(awake) and len({stage(f) for f in awake}) == 1),
         ("eyes open for the whole still", all(hold)),
-        ("a blink lands at ~%.1fs" % STILL, not all(blink)),
-        ("eyes open again after it", any(eyes[still_n + 3:])),
+        ("blinks twice at ~%.1fs" % STILL, blinks == 2),
+        ("eyes open again after them", any(eyes[still_n + 10:])),
+        ("first words are the tokenmaxxing line",
+         bool(said) and said[-1].startswith("let's start tokenmaxxing")),
         ("bubble empty during the still", bubbles == {""}),
         ("titled Claude while disguised",
          all("Claude " in f and "Claudagocchi" not in f for f in early)),

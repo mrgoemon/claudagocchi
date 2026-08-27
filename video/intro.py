@@ -73,8 +73,7 @@ def main():
             sys.stdout.buffer.write(_sanitize(f.read()))
         sys.stdout.buffer.flush()
     except OSError:
-        _out(f"{CLAUDE}Welcome to Claude Code{RESET} {DIM}v2.1.247{RESET}\n"
-             f"{DIM}(run video/capture_banner.py for the real banner){RESET}\n")
+        _out(f"{CLAUDE}Welcome to Claude Code{RESET} {DIM}v2.1.247{RESET}\n")
     time.sleep(WELCOME_HOLD)
 
     # hand the terminal to the crab, waking up

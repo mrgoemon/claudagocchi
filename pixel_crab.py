@@ -805,19 +805,23 @@ def _boot_wave(x, ground, fps):
     return wave + cooldown
 
 INTRO_STILL_SEC = 4.0        # the held "screenshot" before the blink
+INTRO_AWAKE_SEC = 3.0        # awake but not moving yet, while it says its line
 
 def _wake_scene(x, ground, fps):
     """CRAB_INTRO opening for the launch video.
 
     The crab holds a frame-for-frame still -- eyes open, ordinary pose, exactly
     what a screenshot of the app looks like -- so the viewer reads it as a
-    static image. Then it blinks, which is the moment it turns out to be alive.
+    static image. Then it blinks twice, which is the moment it turns out to be
+    alive, and stays put a beat longer while it speaks before it starts moving.
     Fixed durations, so the recording's zoom keyframes can be timed against it.
     """
     span = max(1, int(fps))
-    return ([(x, ground, pose(), None)] * int(span * INTRO_STILL_SEC) +
-            [(x, ground, pose(eye_open=False), None)] * 2 +   # the blink
-            [(x, ground, pose(), None)] * (span * 3 // 10))   # beat, then _boot_wave
+    still = [(x, ground, pose(), None)]
+    shut = [(x, ground, pose(eye_open=False), None)]
+    return (still * int(span * INTRO_STILL_SEC) +
+            (shut * 2 + still * 2) * 2 +                      # blink, twice
+            still * int(span * INTRO_AWAKE_SEC))              # then _boot_wave
 
 def _celebrate(x, ground):
     """A happy in-place bounce for commits / completed quests. 4-tuples: (x,y,frame,drop)."""
@@ -1104,11 +1108,13 @@ def animate(color=True, fps=10, name="kh"):
         pending = wake + pending
         # Counted in FRAMES, not seconds: a frame costs a little more than
         # 1/fps, so a wall-clock deadline expires while the still is still on
-        # screen and the greeting starts typing early.
-        intro_blank = len(wake) - 3      # blank through the still and the blink
-        idle_speech = "Welcome back, kh!"
+        # screen and the first line starts typing early. The disguise lasts
+        # exactly as long as the still plus both blinks, so the crab speaks the
+        # instant its eyes come back open.
+        intro_blank = int(fps * INTRO_STILL_SEC) + 8
+        idle_speech = "let's start tokenmaxxing 🦀"      # its first words
         idle_next = float("inf")         # held until the blink; see intro_blank
-        intro_lines = ["let's start tokenmaxxing 🦀"]   # said after the greeting
+        intro_lines = ["Welcome back, kh!"]
     commit_seen = None                            # SHAs already gifted (None = baseline first)
     today, strk = {"added": 0, "commits": 0}, 0   # until the first poll fills them in
     dying, death_at = False, 0.0                  # mid-death-scene, and when it ends
