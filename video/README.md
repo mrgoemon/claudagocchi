@@ -4,10 +4,11 @@ One-take recording of a fake `claude` launch that hands off to the crab waking
 up; the camera zoom is done in post with ffmpeg.
 
 0. `python3 video/capture_banner.py` — records the real Claude launch screen to
-   `video/claude_banner.ansi`, which `intro.py` replays verbatim. If Claude has
-   never been trusted in this repo it will capture its "do you trust this
-   folder?" prompt instead; run `claude` here once by hand, accept, quit, and
-   re-run. Re-run after a Claude upgrade too.
+   `video/claude_banner.ansi`, which `intro.py` replays verbatim. Re-run after a
+   Claude upgrade. If it reports that Claude asked whether it trusts the
+   directory, launch `claude` there once by hand and accept, quit, then run the
+   capture again — and note the banner shows whichever directory Claude was
+   started in, so capture from the repo you want on camera.
 1. Set up a terminal window: ≥100 cols, ~18pt font, dark theme, Retina display.
 2. `./video/record.sh rect` — click that window to cache its screen region.
 3. `./video/record.sh` — after the countdown, run `python3 video/intro.py` in

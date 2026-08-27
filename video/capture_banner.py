@@ -80,9 +80,32 @@ def capture(cwd):
     return buf or None
 
 
+def first_paint(buf):
+    """Cut everything after Claude's initial draw.
+
+    Once the banner is up, the status line keeps repainting itself -- a
+    "connecting" spinner settling, the PR indicator arriving, the window title
+    changing. Those are cursor-positioned partial updates that assume a
+    full-screen buffer, so replaying them just makes the intro flicker. The
+    first cursor-show after the version string marks the end of the first
+    complete paint, which is the frame worth keeping.
+    """
+    # Claude positions each word with its own column jump, so the header reads
+    # `Claude\033[19GCode` in the byte stream -- match on the version instead.
+    ver = buf.find(b"v2.")
+    if ver < 0:
+        ver = buf.find(b"Claude")
+    if ver < 0:
+        return buf
+    end = buf.find(b"\033[?25h", ver)
+    return buf[:end + len(b"\033[?25h")] if end > 0 else buf
+
+
 def main():
     cwd = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_CWD
     buf = capture(cwd)
+    if buf:
+        buf = first_paint(buf)
     if buf and b"safety check" in buf:
         print(f"Claude asked whether it trusts {cwd}, so that prompt got captured\n"
               f"instead of the banner. Run `claude` there once by hand, accept, quit,\n"
