@@ -292,6 +292,20 @@ SPEECH = "Welcome back kh!"                 # -> speech bubble later
 STATS = ["~ヽ(｡･ω･｡)", "tokens used today …", "today …", "tokens all-time …",
          "sessions …"]
 
+INTRO_TITLE = "Claude"          # what the box calls itself while it plays dead
+
+def _intro_stats():
+    """Claude Code's own status lines, for the CRAB_INTRO still.
+
+    The joke needs the frame to pass for Claude until the crab blinks, so the
+    box wears Claude's title and status bar and drops both on the blink. Must
+    stay the same length as STATS -- the redraw height is measured from that.
+    """
+    cwd = os.getcwd().replace(os.path.expanduser("~"), "~", 1)
+    return ["Opus 5 (1M context) with medium effort · Claude Max", cwd, "",
+            "auto mode on (shift+tab to cycle) · ← for agents",
+            "◐ medium · /effort · /rc"]
+
 HOARD_CAP = 10                  # max glyphs shown in the pile
 HOARD_COLOR = [(120, 120, 120), (155, 150, 160), (200, 126, 95),
                (215, 165, 95), (235, 205, 120)]   # by tier: dull -> golden
@@ -326,7 +340,7 @@ HEADSTONE_COLOR = (120, 120, 130)
 
 def render_window(color=True, stage_h=3, x=None, y=0, frame=None, speech=None,
                   stats=None, hoard=None, drop=None, emote=None, morph=ADULT,
-                  headstone=False) -> str:
+                  headstone=False, title=None) -> str:
     """Draw the window with the crab sprite placed at (x, y) on a stage_h-tall
     stage. `speech`/`stats` override the static placeholders when live;
     `hoard` is a list of (glyph, tier) drawn as a pile in the bottom-right;
@@ -372,8 +386,9 @@ def render_window(color=True, stage_h=3, x=None, y=0, frame=None, speech=None,
 
     # Border, drawn entirely in coral (same as the Claudagocchi title).
     co = (lambda s: fg(CORAL) + s + RESET) if color else (lambda s: s)
-    k = max(inner - 3 - len(TITLE), 0)
-    top = co("╭─ " + TITLE + " " + "─" * k + "╮")
+    name = TITLE if title is None else title
+    k = max(inner - 3 - len(name), 0)
+    top = co("╭─ " + name + " " + "─" * k + "╮")
     bottom = co("╰" + "─" * inner + "╯")
     bar = co("│")
     def text(line): return bar + _center_text(line, inner) + bar
@@ -1082,8 +1097,9 @@ def animate(color=True, fps=10, name="kh"):
     # INTRO_STILL_SEC with an EMPTY bubble -- so the frame is indistinguishable
     # from a screenshot -- then blinks and the boot wave runs. The bubble stays
     # blank for exactly the still, so the greeting starts typing on the blink.
-    intro_lines, intro_blank = [], 0
+    intro_lines, intro_blank, intro_stats = [], 0, None
     if os.environ.get("CRAB_INTRO"):
+        intro_stats = _intro_stats()
         wake = _wake_scene(pos["x"], ground, fps)
         pending = wake + pending
         # Counted in FRAMES, not seconds: a frame costs a little more than
@@ -1323,7 +1339,11 @@ def animate(color=True, fps=10, name="kh"):
                 else:
                     x, y, frame, emote = next(gen); drop = None
                 disp = temp_speech if now < temp_until else idle_speech
-                if intro_blank > 0:               # launch-video still: no bubble at all
+                # The launch-video still passes for a Claude session -- Claude's
+                # title, Claude's status bar, no speech bubble -- until the
+                # crab blinks and gives the whole thing away.
+                disguised = intro_blank > 0
+                if disguised:
                     intro_blank, disp = intro_blank - 1, ""
                     if intro_blank == 0:          # eyes just opened -> greet, then rotate
                         idle_next = now + 6.0
@@ -1335,7 +1355,9 @@ def animate(color=True, fps=10, name="kh"):
                 typed = type_text[:int((now - type_start) * TYPE_CPS)]
                 bubble = typed + " " * max(_vlen(type_text) - _vlen(typed), 0)  # hold full width
                 win = render_window(color, stage_h=stage_h, x=x, y=y, frame=frame,
-                                    speech=bubble, stats=cur_stats, hoard=hoard_g,
+                                    speech=bubble, hoard=hoard_g,
+                                    stats=intro_stats if disguised else cur_stats,
+                                    title=INTRO_TITLE if disguised else None,
                                     drop=drop, emote=emote, morph=morph,
                                     headstone=bool(state.get("graveyard")))
             win += "\n" + _input_line(chat_buf, inner, color, chat_ok)

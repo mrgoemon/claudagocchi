@@ -54,12 +54,20 @@ def main():
         return rows[2].strip().strip("│").strip() if len(rows) > 2 else "?"
 
     bubbles = {speech(f) for f in frames[:still_n - 2]}
+    early, late = frames[:still_n - 2], frames[still_n + 4:]
     checks = [
         ("frame height constant", codes == [FRAME_H]),
         ("eyes open for the whole still", all(hold)),
         ("a blink lands at ~%.1fs" % STILL, not all(blink)),
         ("eyes open again after it", any(eyes[still_n + 3:])),
         ("bubble empty during the still", bubbles == {""}),
+        ("titled Claude while disguised",
+         all("Claude " in f and "Claudagocchi" not in f for f in early)),
+        ("Claude's status bar while disguised",
+         all("/effort" in f for f in early)),
+        ("reveals Claudagocchi after the blink",
+         bool(late) and all("Claudagocchi" in f for f in late)),
+        ("real stats come back", any("tokens" in f for f in late)),
         ("no traceback", "Traceback" not in text),
     ]
     for name, ok in checks:
