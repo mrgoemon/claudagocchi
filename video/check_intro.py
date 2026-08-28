@@ -88,6 +88,9 @@ def main():
         ("eyes open again after them", any(eyes[still_n + 10:])),
         ("says the tokenmaxxing line after the hop",
          any(t.startswith("let's start tokenmaxxing") for t in said)),
+        ("and never says anything else after it",
+         all(t == greeting or "let's start tokenmaxxing".startswith(t[:24])
+             or t.startswith("let's start tokenmaxxing") for t in said)),
         ("greeting already finished on the still",
          bubbles == {"Welcome back, Kengo!"}),
         ("titled Claude while disguised",

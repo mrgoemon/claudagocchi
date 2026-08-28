@@ -294,6 +294,7 @@ STATS = ["~ヽ(｡･ω･｡)", "tokens used today …", "today …", "tokens a
 
 INTRO_TITLE = "Claude"          # what the box calls itself while it plays dead
 INTRO_GREETING = "Welcome back, Kengo!"      # already on screen when it opens
+INTRO_LINE = "let's start tokenmaxxing 🦀"    # and what it says for the rest of it
 
 def _intro_stats():
     """Claude Code's own status lines, for the CRAB_INTRO still.
@@ -1119,13 +1120,13 @@ def animate(color=True, fps=10, name="kh"):
     # INTRO_STILL_SEC with an EMPTY bubble -- so the frame is indistinguishable
     # from a screenshot -- then blinks and the boot wave runs. The bubble stays
     # blank for exactly the still, so the greeting starts typing on the blink.
-    intro_lines, intro_blank, intro_greet, intro_stats = [], 0, 0, None
+    intro_mode, intro_blank, intro_greet, intro_stats = False, 0, 0, None
     # Claude's status bar holds until the crab is off the scripted wake and
     # moving under its own steam -- the vitals are the last thing to give the
     # disguise away, well after the title has already changed.
     intro_scripted = False
     if os.environ.get("CRAB_INTRO"):
-        intro_stats, intro_scripted = _intro_stats(), True
+        intro_mode, intro_stats, intro_scripted = True, _intro_stats(), True
         wake = _wake_scene(pos["x"], ground, fps)
         pending = wake + pending
         # Counted in FRAMES, not seconds: a frame costs a little more than
@@ -1134,8 +1135,8 @@ def animate(color=True, fps=10, name="kh"):
         # exactly as long as the still plus both blinks, so the crab speaks the
         # instant its eyes come back open.
         intro_blank, intro_greet = _wake_beats(fps)
-        idle_speech = "let's start tokenmaxxing 🦀"      # said after the hop
-        idle_next = float("inf")         # held until then; see intro_greet
+        idle_speech = INTRO_LINE          # said after the hop, and then kept
+        idle_next = float("inf")          # never rotates: it's a fixed take
         # The greeting is already finished when the frame opens: letting the
         # typewriter run it would give away that the still is live.
         type_text, type_start = INTRO_GREETING, 0.0
@@ -1313,11 +1314,8 @@ def animate(color=True, fps=10, name="kh"):
                     cs.take_break(state, now)
                     temp_speech, temp_until = cs.speech(state, mood, [], [], True, name), now + 4
                 if now >= idle_next:                      # refresh the idle line periodically
-                    if intro_lines:                       # scripted for the launch video
-                        idle_speech, idle_next = intro_lines.pop(0), now + ROTATE_SEC
-                    else:
-                        idle_speech = cs.idle_speech(state, mood, pr_stats_box["v"], name)
-                        idle_next = now + ROTATE_SEC
+                    idle_speech = cs.idle_speech(state, mood, pr_stats_box["v"], name)
+                    idle_next = now + ROTATE_SEC
                 state["pr_cache"] = pr_stats_box["v"]     # cache for instant next launch
                 # --- evolution seam. Only swap morphs at a quiescent moment: a
                 # half-played scene baked the old `ground` and panel width into its
@@ -1379,8 +1377,8 @@ def animate(color=True, fps=10, name="kh"):
                     intro_blank -= 1
                 if intro_greet > 0:               # greeting outlasts the disguise
                     intro_greet, disp = intro_greet - 1, INTRO_GREETING
-                    if intro_greet == 0:          # hop over -> say the next line
-                        idle_next = now + 6.0
+                elif intro_mode:
+                    disp = INTRO_LINE             # pinned: the take says one line
                 if chat_pending_since is not None and now - chat_pending_since > 3:
                     disp = "hmm…"                 # only after a slow reply; else keep the line
                 disp = _clip(disp, inner - 2 * BUBBLE_PAD)   # keep the bubble off the box edges
