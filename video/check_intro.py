@@ -15,7 +15,6 @@ import time
 FRAME_H = 18
 EYE = "38;2;24;24;28"          # fg(EYE): present only when the eyes are drawn
 STILL = 4.0            # motionless "screenshot" before the blinks
-AWAKE = 7.0            # still + blinks + the motionless beat after them
 FPS = 10
 
 
@@ -26,7 +25,7 @@ def main():
     if pid == 0:
         os.execvp("python3", ["python3", "pixel_crab.py", "--animate"])
     buf, t0 = b"", time.time()
-    while time.time() - t0 < 8.0:
+    while time.time() - t0 < 14.0:
         r, _, _ = select.select([fd], [], [], 0.2)
         if not r:
             continue
@@ -71,17 +70,21 @@ def main():
         rows = [re.sub(r"\033\[[0-9;]*[A-Za-z]", "", l) for l in fr.split("\n")]
         return "\n".join(rows[4:9])
 
-    # From the last blink to the end of the wake: awake, speaking, not moving.
-    awake = frames[still_n + 10:int((STILL + AWAKE) * FPS)]
+    # The frame where the greeting gives way to the next line, and the frames
+    # between the blinks and that moment -- the crab should hop in there.
+    greeting = "Welcome back, Kengo!"
+    switch = next((i for i, f in enumerate(frames) if speech(f) != greeting
+                   and i > still_n), len(frames))
+    hop_win = frames[still_n + 8:switch]
     checks = [
         ("frame height constant", codes == [FRAME_H]),
-        ("motionless while it speaks",
-         bool(awake) and len({stage(f) for f in awake}) == 1),
+        ("hops before changing its line",
+         switch > still_n + 8 and len({stage(f) for f in hop_win}) > 1),
         ("eyes open for the whole still", all(hold)),
         ("blinks twice at ~%.1fs" % STILL, blinks == 2),
         ("eyes open again after them", any(eyes[still_n + 10:])),
-        ("says the tokenmaxxing line on waking",
-         bool(said) and said[-1].startswith("let's start tokenmaxxing")),
+        ("says the tokenmaxxing line after the hop",
+         any(t.startswith("let's start tokenmaxxing") for t in said)),
         ("greeting already finished on the still",
          bubbles == {"Welcome back, Kengo!"}),
         ("titled Claude while disguised",

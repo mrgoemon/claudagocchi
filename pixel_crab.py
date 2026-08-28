@@ -806,7 +806,8 @@ def _boot_wave(x, ground, fps):
     return wave + cooldown
 
 INTRO_STILL_SEC = 4.0        # the held "screenshot" before the blink
-INTRO_AWAKE_SEC = 3.0        # awake but not moving yet, while it says its line
+INTRO_HOPS = 2               # its first move, before it changes what it says
+INTRO_SETTLE_SEC = 1.0       # landing beat, then ordinary crab life resumes
 
 def _wake_scene(x, ground, fps):
     """CRAB_INTRO opening for the launch video.
@@ -820,9 +821,25 @@ def _wake_scene(x, ground, fps):
     span = max(1, int(fps))
     still = [(x, ground, pose(), None)]
     shut = [(x, ground, pose(eye_open=False), None)]
+    hop = [(x, ground, pose(leg="squat"), None),
+           (x, _hop(ground, 1), pose(leg="tuck"), None),
+           (x, _hop(ground, 2), pose(leg="tuck"), None),
+           (x, _hop(ground, 1), pose(leg="tuck"), None),
+           (x, ground, pose(leg="squat"), None)]
     return (still * int(span * INTRO_STILL_SEC) +
             (shut * 2 + still * 2) * 2 +                      # blink, twice
-            still * int(span * INTRO_AWAKE_SEC))              # then _boot_wave
+            hop * INTRO_HOPS +                                # its first move
+            still * int(span * INTRO_SETTLE_SEC))             # then _boot_wave
+
+
+def _wake_beats(fps):
+    """(frames of disguise, frames the opening greeting stays up).
+
+    The disguise drops on the blink, but the greeting outlasts it: the crab
+    hops first and only then changes what it is saying.
+    """
+    blinked = int(max(1, int(fps)) * INTRO_STILL_SEC) + 8
+    return blinked, blinked + 5 * INTRO_HOPS
 
 def _celebrate(x, ground):
     """A happy in-place bounce for commits / completed quests. 4-tuples: (x,y,frame,drop)."""
@@ -1102,7 +1119,7 @@ def animate(color=True, fps=10, name="kh"):
     # INTRO_STILL_SEC with an EMPTY bubble -- so the frame is indistinguishable
     # from a screenshot -- then blinks and the boot wave runs. The bubble stays
     # blank for exactly the still, so the greeting starts typing on the blink.
-    intro_lines, intro_blank, intro_stats = [], 0, None
+    intro_lines, intro_blank, intro_greet, intro_stats = [], 0, 0, None
     if os.environ.get("CRAB_INTRO"):
         intro_stats = _intro_stats()
         wake = _wake_scene(pos["x"], ground, fps)
@@ -1112,9 +1129,9 @@ def animate(color=True, fps=10, name="kh"):
         # screen and the first line starts typing early. The disguise lasts
         # exactly as long as the still plus both blinks, so the crab speaks the
         # instant its eyes come back open.
-        intro_blank = int(fps * INTRO_STILL_SEC) + 8
-        idle_speech = "let's start tokenmaxxing 🦀"      # said on the blink
-        idle_next = float("inf")         # held until the blink; see intro_blank
+        intro_blank, intro_greet = _wake_beats(fps)
+        idle_speech = "let's start tokenmaxxing 🦀"      # said after the hop
+        idle_next = float("inf")         # held until then; see intro_greet
         # The greeting is already finished when the frame opens: letting the
         # typewriter run it would give away that the still is live.
         type_text, type_start = INTRO_GREETING, 0.0
@@ -1354,8 +1371,10 @@ def animate(color=True, fps=10, name="kh"):
                 # away.
                 disguised = intro_blank > 0
                 if disguised:
-                    intro_blank, disp = intro_blank - 1, INTRO_GREETING
-                    if intro_blank == 0:          # eyes just opened -> greet, then rotate
+                    intro_blank -= 1
+                if intro_greet > 0:               # greeting outlasts the disguise
+                    intro_greet, disp = intro_greet - 1, INTRO_GREETING
+                    if intro_greet == 0:          # hop over -> say the next line
                         idle_next = now + 6.0
                 if chat_pending_since is not None and now - chat_pending_since > 3:
                     disp = "hmm…"                 # only after a slow reply; else keep the line
