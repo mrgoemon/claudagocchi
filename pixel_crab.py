@@ -293,6 +293,7 @@ STATS = ["~ヽ(｡･ω･｡)", "tokens used today …", "today …", "tokens a
          "sessions …"]
 
 INTRO_TITLE = "Claude"          # what the box calls itself while it plays dead
+INTRO_GREETING = "Welcome back, Kengo!"      # already on screen when it opens
 
 def _intro_stats():
     """Claude Code's own status lines, for the CRAB_INTRO still.
@@ -1112,9 +1113,11 @@ def animate(color=True, fps=10, name="kh"):
         # exactly as long as the still plus both blinks, so the crab speaks the
         # instant its eyes come back open.
         intro_blank = int(fps * INTRO_STILL_SEC) + 8
-        idle_speech = "let's start tokenmaxxing 🦀"      # its first words
+        idle_speech = "let's start tokenmaxxing 🦀"      # said on the blink
         idle_next = float("inf")         # held until the blink; see intro_blank
-        intro_lines = ["Welcome back, kh!"]
+        # The greeting is already finished when the frame opens: letting the
+        # typewriter run it would give away that the still is live.
+        type_text, type_start = INTRO_GREETING, 0.0
     commit_seen = None                            # SHAs already gifted (None = baseline first)
     today, strk = {"added": 0, "commits": 0}, 0   # until the first poll fills them in
     dying, death_at = False, 0.0                  # mid-death-scene, and when it ends
@@ -1346,11 +1349,12 @@ def animate(color=True, fps=10, name="kh"):
                     x, y, frame, emote = next(gen); drop = None
                 disp = temp_speech if now < temp_until else idle_speech
                 # The launch-video still passes for a Claude session -- Claude's
-                # title, Claude's status bar, no speech bubble -- until the
-                # crab blinks and gives the whole thing away.
+                # title, Claude's status bar, a greeting that is already
+                # finished -- until the crab blinks and gives the whole thing
+                # away.
                 disguised = intro_blank > 0
                 if disguised:
-                    intro_blank, disp = intro_blank - 1, ""
+                    intro_blank, disp = intro_blank - 1, INTRO_GREETING
                     if intro_blank == 0:          # eyes just opened -> greet, then rotate
                         idle_next = now + 6.0
                 if chat_pending_since is not None and now - chat_pending_since > 3:
