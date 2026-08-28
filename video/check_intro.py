@@ -76,6 +76,9 @@ def main():
     switch = next((i for i, f in enumerate(frames) if speech(f) != greeting
                    and i > still_n), len(frames))
     hop_win = frames[still_n + 8:switch]
+    # Where Claude's status bar gives way to the crab's own vitals.
+    stats_at = next((i for i, f in enumerate(frames) if "/effort" not in f
+                     and i > still_n), len(frames))
     checks = [
         ("frame height constant", codes == [FRAME_H]),
         ("hops before changing its line",
@@ -93,7 +96,9 @@ def main():
          all("/effort" in f for f in early)),
         ("reveals Claudagocchi after the blink",
          bool(late) and all("Claudagocchi" in f for f in late)),
-        ("real stats come back", any("tokens" in f for f in late)),
+        ("stats stay Claude's until it moves freely",
+         stats_at > switch),
+        ("real stats arrive in the end", stats_at < len(frames)),
         ("no traceback", "Traceback" not in text),
     ]
     for name, ok in checks:

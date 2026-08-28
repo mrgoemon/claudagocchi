@@ -21,8 +21,10 @@ CRAB_T=$(echo "$T0 + 5.1" | bc)      # crab frame appears (intro.py timings)
 # blinks and the hop, and be pulled back by the time it starts walking.
 ZOUT_START=$(echo "$CRAB_T + 5.9" | bc)
 ZOUT_END=$(echo "$CRAB_T + 8.2" | bc)
-T_FADE=20              # end-card crossfade starts
-TOTAL=23               # final video length
+# The vitals only appear once the crab is wandering on its own, ~11s after
+# the frame opens, so hold well past that before the card.
+T_FADE=22              # end-card crossfade starts
+TOTAL=25               # final video length
 
 # ---- zoom target -----------------------------------------------------------
 ZMAX=3.0               # how tight the zoom-in is

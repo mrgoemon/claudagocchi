@@ -1120,8 +1120,12 @@ def animate(color=True, fps=10, name="kh"):
     # from a screenshot -- then blinks and the boot wave runs. The bubble stays
     # blank for exactly the still, so the greeting starts typing on the blink.
     intro_lines, intro_blank, intro_greet, intro_stats = [], 0, 0, None
+    # Claude's status bar holds until the crab is off the scripted wake and
+    # moving under its own steam -- the vitals are the last thing to give the
+    # disguise away, well after the title has already changed.
+    intro_scripted = False
     if os.environ.get("CRAB_INTRO"):
-        intro_stats = _intro_stats()
+        intro_stats, intro_scripted = _intro_stats(), True
         wake = _wake_scene(pos["x"], ground, fps)
         pending = wake + pending
         # Counted in FRAMES, not seconds: a frame costs a little more than
@@ -1364,6 +1368,7 @@ def animate(color=True, fps=10, name="kh"):
                     x, y, frame, drop = pending.pop(0); emote = None
                 else:
                     x, y, frame, emote = next(gen); drop = None
+                    intro_scripted = False    # off the script -- moving on its own now
                 disp = temp_speech if now < temp_until else idle_speech
                 # The launch-video still passes for a Claude session -- Claude's
                 # title, Claude's status bar, a greeting that is already
@@ -1385,7 +1390,7 @@ def animate(color=True, fps=10, name="kh"):
                 bubble = typed + " " * max(_vlen(type_text) - _vlen(typed), 0)  # hold full width
                 win = render_window(color, stage_h=stage_h, x=x, y=y, frame=frame,
                                     speech=bubble, hoard=hoard_g,
-                                    stats=intro_stats if disguised else cur_stats,
+                                    stats=intro_stats if intro_scripted else cur_stats,
                                     title=INTRO_TITLE if disguised else None,
                                     drop=drop, emote=emote, morph=morph,
                                     headstone=bool(state.get("graveyard")))
