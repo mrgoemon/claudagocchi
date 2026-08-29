@@ -26,7 +26,12 @@ import subprocess
 import tempfile
 import pathlib
 
-DIR = pathlib.Path.home() / ".claude-crab"
+# CRAB_SAVE_DIR relocates the whole save. The launch-video demo points it at a
+# throwaway crab so recording a take cannot read or write the real pet; it is
+# deliberately narrow -- Claude Code's own data still comes from ~/.claude, so
+# the token and session counts on screen stay real.
+DIR = pathlib.Path(os.environ.get("CRAB_SAVE_DIR")
+                   or pathlib.Path.home() / ".claude-crab")
 STATE = DIR / "state.json"
 CONFIG = DIR / "config.json"
 PRE_DEATH = DIR / "state.pre-death.json"   # safety copy taken before a permadeath reset

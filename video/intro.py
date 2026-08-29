@@ -10,6 +10,7 @@ just record the window.
 """
 import os
 import re
+import shutil
 import sys
 import time
 
@@ -81,6 +82,14 @@ def main():
     here = os.path.dirname(os.path.abspath(__file__))
     os.chdir(os.path.dirname(here))                # repo root, where pixel_crab.py lives
     os.environ["CRAB_INTRO"] = "1"
+    # The demo gets its own crab, wiped every run so takes are identical: the
+    # real pet is never opened, and none of its history (a graveyard headstone,
+    # a hoard, a form-locked morph) ends up on camera. Only the save moves --
+    # tokens and sessions still come from ~/.claude, so those stay real.
+    demo = os.path.join(here, "demo-save")
+    shutil.rmtree(demo, ignore_errors=True)
+    os.environ["CRAB_SAVE_DIR"] = demo
+    os.environ["CRAB_STAGE"] = "adult"             # always the plain adult crab
     os.execvp(sys.executable or "python3",
               [sys.executable or "python3", "pixel_crab.py", "--animate"])
 

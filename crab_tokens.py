@@ -19,7 +19,8 @@ PROJECTS = os.path.expanduser("~/.claude/projects")
 # totals, which would go stale at midnight -- so "today"/"week" are still rolled
 # up from the current date on every call, and the uuid dedupe still runs across
 # every file exactly as a full scan would.
-CACHE = os.path.expanduser("~/.claude-crab/token-cache.json")
+CACHE = os.path.join(os.environ.get("CRAB_SAVE_DIR")
+                     or os.path.expanduser("~/.claude-crab"), "token-cache.json")
 CACHE_V = 1
 
 # $ per 1M tokens (input, output) — for the "equivalent API cost" estimate only.

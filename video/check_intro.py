@@ -9,6 +9,7 @@ import pty
 import re
 import select
 import signal
+import subprocess
 import sys
 import time
 
@@ -18,9 +19,29 @@ STILL = 4.0            # motionless "screenshot" before the blinks
 FPS = 10
 
 
+def save_paths():
+    """Where the child process would actually read and write its crab.
+
+    Hashing the real save before and after proves nothing here: the user's own
+    crab is usually running and rewrites it every few seconds, so a change
+    cannot be attributed to this run. Resolving the paths is the real invariant.
+    """
+    code = ("import crab_state, crab_tokens;"
+            "print(crab_state.STATE);print(crab_state.CONFIG);"
+            "print(crab_state.PRE_DEATH);print(crab_tokens.CACHE)")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                         text=True, env=dict(os.environ))
+    return out.stdout.split()
+
+
 def main():
     os.environ["COLUMNS"] = "100"
     os.environ["CRAB_INTRO"] = "1"
+    # Same isolation intro.py uses -- the point is to prove it holds.
+    demo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demo-save")
+    os.environ["CRAB_SAVE_DIR"] = demo
+    os.environ["CRAB_STAGE"] = "adult"
+    paths = save_paths()
     pid, fd = pty.fork()
     if pid == 0:
         os.execvp("python3", ["python3", "pixel_crab.py", "--animate"])
@@ -79,8 +100,20 @@ def main():
     # Where Claude's status bar gives way to the crab's own vitals.
     stats_at = next((i for i, f in enumerate(frames) if "/effort" not in f
                      and i > still_n), len(frames))
+    def sprite_w(fr):        # how many columns the crab spans
+        rows = [re.sub(r"\033\[[0-9;]*[A-Za-z]", "", l).strip("│\r")
+                for l in fr.split("\n")[4:9]]
+        cols = [i for r in rows for i, ch in enumerate(r) if ch != " "]
+        return max(cols) - min(cols) + 1 if cols else 0
+
+    # Widths straight from the source, so a morph resize can't silently pass.
+    adult_w = int(subprocess.run(
+        [sys.executable, "-c", "import pixel_crab;print(pixel_crab.MORPHS['adult'].w)"],
+        capture_output=True, text=True, env=dict(os.environ)).stdout.strip() or 0)
     checks = [
         ("frame height constant", codes == [FRAME_H]),
+        ("always the adult crab, never the fresh-save egg",
+         sprite_w(frames[5]) == adult_w),
         ("hops before changing its line",
          switch > still_n + 8 and len({stage(f) for f in hop_win}) > 1),
         ("eyes open for the whole still", all(hold)),
@@ -102,6 +135,11 @@ def main():
         ("stats stay Claude's until it moves freely",
          stats_at > switch),
         ("real stats arrive in the end", stats_at < len(frames)),
+        ("every save path lands in the sandbox",
+         bool(paths) and all(p.startswith(demo) for p in paths)),
+        ("demo save was written", os.path.exists(os.path.join(demo, "state.json"))),
+        ("real token numbers still shown",
+         any(re.search(r"tokens used today\s+[1-9]", f) for f in frames)),
         ("no traceback", "Traceback" not in text),
     ]
     for name, ok in checks:

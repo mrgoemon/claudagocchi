@@ -20,6 +20,11 @@ up; the camera zoom is done in post with ffmpeg.
    First take: tune `T0` (recording→intro offset) and `CX`/`CY` (crab center)
    at the top of the script, re-run until the zoom lands on the crab.
 
+The demo runs on its own throwaway crab (`video/demo-save/`, wiped every run,
+`CRAB_SAVE_DIR`) and always shows the plain adult morph (`CRAB_STAGE`), so
+`~/.claude-crab` is never touched and every take is identical. Token, session
+and commit numbers are still real — only the save is redirected.
+
 `intro.py` fakes the shell prompt and types `claude`, replays the captured
 launch screen, then execs `CRAB_INTRO=1 pixel_crab.py --animate` — the env var
 holds the crab dead still with an empty speech bubble for 4s (so it reads as a
