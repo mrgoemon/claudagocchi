@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 
-FRAME_H = 17
+FRAME_H = 18
 EYE = "38;2;24;24;28"          # fg(EYE): present only when the eyes are drawn
 STILL = 4.0            # motionless "screenshot" before the blinks
 FPS = 10
@@ -140,10 +140,10 @@ def main():
         ("demo save was written", os.path.exists(os.path.join(demo, "state.json"))),
         ("real token numbers still shown",
          any(re.search(r"tokens used today\s+[1-9]", f) for f in frames)),
-        ("live burn rate is on screen",
-         any(re.search(r"live\s+(…|[\d.]+[kM]? tok/min)", f) for f in frames)),
-        ("sessions and git lines are gone",
-         not any("sessions " in f or "PRs" in f for f in frames)),
+        ("plan limits are on screen",
+         any(re.search(r"session\s+(…|[●○]{5}\s+\d+%)", f) for f in frames)
+         and any(re.search(r"weekly\s+(…|[●○]{5}\s+\d+%)", f) for f in frames)),
+        ("git lines are gone", not any("PRs" in f for f in frames)),
         ("no traceback", "Traceback" not in text),
     ]
     for name, ok in checks:

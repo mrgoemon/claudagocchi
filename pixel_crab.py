@@ -27,7 +27,6 @@ import shutil
 import random
 import unicodedata
 import os
-import collections
 import datetime
 import threading
 import queue
@@ -38,6 +37,7 @@ import pathlib
 import crab_state as cs
 import crab_chat as cc
 import crab_games as cg
+import crab_limits as climits
 import crab_tokens as ctok
 import crab_sessions as csess
 import crab_hall
@@ -290,7 +290,8 @@ SPEECH = "Welcome back kh!"                 # -> speech bubble later
 # startup, so this list must have exactly as many entries as cs.stat_lines
 # returns -- one short and the first frame is a line shorter than every frame
 # after it, and the in-place redraw tears for the rest of the session.
-STATS = ["~ヽ(｡･ω･｡)", "tokens used today …", "tokens all-time …", "live …"]
+STATS = ["~ヽ(｡･ω･｡)", "tokens used today …", "tokens all-time …",
+         "session …", "weekly …"]
 
 INTRO_TITLE = "Claude"          # what the box calls itself while it plays dead
 INTRO_GREETING = "Welcome back, Kengo!"      # already on screen when it opens
@@ -304,7 +305,7 @@ def _intro_stats():
     stay the same length as STATS -- the redraw height is measured from that.
     """
     cwd = os.getcwd().replace(os.path.expanduser("~"), "~", 1)
-    return ["Opus 5 (1M context) with medium effort · Claude Max", cwd,
+    return ["Opus 5 (1M context) with medium effort · Claude Max", cwd, "",
             "auto mode on (shift+tab to cycle) · ← for agents",
             "◐ medium · /effort · /rc"]
 
@@ -797,29 +798,6 @@ def behaviors(inner, stage_h, morph, mood_box=None, right_pad=0, pos=None):
                 closed = blink_at <= i < blink_at + 2
                 yield pos["x"], ground, pose(eye_open=not closed), None
 
-TOKEN_POLL = 5          # seconds between token scans
-RATE_WINDOW = 60        # trailing seconds the burn rate averages over
-
-def _burn_rate(samples, now, today_total):
-    """Tokens/min over the trailing RATE_WINDOW, from successive daily totals.
-
-    The token cache keeps only the calendar date of each entry, never the time,
-    so the rate cannot be queried out of it -- it has to be measured by
-    watching the total move. Returns None until there are two samples to
-    difference.
-    """
-    samples.append((now, today_total))
-    while len(samples) > 2 and now - samples[0][0] > RATE_WINDOW:
-        samples.popleft()
-    if len(samples) < 2:
-        return None
-    if today_total < samples[0][1]:       # midnight: `today` reset out from under us
-        samples.clear()
-        samples.append((now, today_total))
-        return 0.0
-    elapsed = now - samples[0][0]
-    return (today_total - samples[0][1]) / elapsed * 60 if elapsed > 0 else None
-
 def _boot_wave(x, ground, fps):
     """Launch greeting: a one-hand wave (~1s), then a ~1s still cooldown before
     the crab starts any action."""
@@ -1209,22 +1187,31 @@ def animate(color=True, fps=10, name="kh"):
     if not os.environ.get("CRAB_NO_DIRECTOR") and not os.environ.get("CRAB_INTRO"):
         threading.Thread(target=_director, daemon=True).start()
 
-    # --- token worker: scan Claude Code's logs off the render loop (~every 5s)
-    # Fast enough that the burn rate reads as live. The scan is incremental, so
-    # a warm pass is ~0.01s -- it re-reads only what was appended.
-    tok_box = {"today": state.get("tok_today_cache", 0), "all": 0, "rate": None}
+    # --- token worker: scan Claude Code's logs off the render loop (~every 45s)
+    tok_box = {"today": state.get("tok_today_cache", 0), "all": 0}
     def _token_worker():
-        samples = collections.deque()     # (when, today_total) over the last minute
         while True:
             try:
                 data = ctok.aggregate()
                 tok_box["today"] = sum(ctok._total(b) for b in data["today"].values())
                 tok_box["all"] = sum(ctok._total(b) for b in data["all"].values())
-                tok_box["rate"] = _burn_rate(samples, time.time(), tok_box["today"])
             except Exception:
                 pass
-            time.sleep(TOKEN_POLL)
+            time.sleep(45)
     threading.Thread(target=_token_worker, daemon=True).start()
+
+    # --- plan limits: how much of the session/weekly windows is gone (~15s).
+    # Only a read of Claude Code's cached /usage response, so this is cheap --
+    # and it only moves when Claude Code itself refetches, every 5 min at best.
+    lim_box = {"v": climits.read()}
+    def _limits_worker():
+        while True:
+            time.sleep(15)
+            try:
+                lim_box["v"] = climits.read()
+            except Exception:
+                pass
+    threading.Thread(target=_limits_worker, daemon=True).start()
 
     # --- session worker: which of your OTHER agent sessions need a human (~2s).
     # Cheap (a handful of small JSON files) but it shells out to `ps`, so it stays
@@ -1324,7 +1311,7 @@ def animate(color=True, fps=10, name="kh"):
                                   "lines": today.get("added", 0), "commits": today.get("commits", 0),
                                   "streak": strk, "hour": datetime.datetime.now().hour, "name": name}
                 cur_stats = cs.stat_lines(state, tok_box["today"], tok_box["all"],
-                                          tok_box["rate"])
+                                          lim_box["v"])
                 if strk in MILESTONES and strk not in state.setdefault("celebrated_ms", []):
                     state["celebrated_ms"].append(strk)         # arm the milestone dance, once
                     mood_box["milestone_ready"] = True
@@ -1511,7 +1498,7 @@ def _status_frame(color):
     state["pr_cache"] = pr_stats                          # warm the cache for next launch
     cs.save_state(state)
     tok_today, tok_all = ctok.today_all()
-    stats = cs.stat_lines(state, tok_today, tok_all)
+    stats = cs.stat_lines(state, tok_today, tok_all, climits.read())
     sp = cs.speech(state, mood, [], [], cs.break_due(state))
     hoard_g = cs.hoard_glyphs(cs.hoard_summary(state))
     morph = MORPHS[cs.life_stage(state)]

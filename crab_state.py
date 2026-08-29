@@ -555,13 +555,24 @@ def _htok(n):
     if n >= 1e3: return f"{n / 1e3:.1f}k"
     return str(int(n))
 
-def stat_lines(state, tokens_today, tokens_all=0, rate=None):
-    """l1 = vitals; l2 = tokens used today; l3 = all-time Claude Code tokens;
-    l4 = how fast Claude is burning tokens right now.
+def _limit_line(label, win, stale):
+    """One usage-limit row: `session ●●○○○  31%  · resets 7:10am`.
 
-    ALWAYS returns four lines -- the window's height is measured once at
-    startup, so a stat line that came and went would tear the redraw. `rate` of
-    None means the burn rate has not been sampled yet, not that it is zero.
+    A stale or missing reading shows `…` rather than a number -- the cache is
+    only refreshed by Claude Code itself, and an hours-old percentage presented
+    as current is worse than admitting we don't know.
+    """
+    if not win or stale:
+        return f"{label:<7} …"
+    line = f"{label:<7} {_meter(win['pct'])} {win['pct']:3.0f}%"
+    return f"{line}  ·  resets {win['resets']}" if win.get("resets") else line
+
+def stat_lines(state, tokens_today, tokens_all=0, limits=None):
+    """l1 = vitals; l2 = tokens used today; l3 = all-time Claude Code tokens;
+    l4/l5 = how much of the plan's session and weekly limits are gone.
+
+    ALWAYS returns five lines -- the window's height is measured once at
+    startup, so a stat line that came and went would tear the redraw.
     """
     belly = 100 - state["hunger"]
     health = state.get("health", 100.0)
@@ -570,8 +581,11 @@ def stat_lines(state, tokens_today, tokens_all=0, rate=None):
         l1 += f"  health {_meter(health)}"
     l2 = f"tokens used today  {tokens_today:,}"
     l3 = f"tokens all-time  {tokens_all:,}"
-    l4 = "live  …" if rate is None else f"live  {_htok(rate)} tok/min"
-    return [l1, l2, l3, l4]
+    lim = limits or {}
+    stale = lim.get("stale", True)
+    return [l1, l2, l3,
+            _limit_line("session", lim.get("session"), stale),
+            _limit_line("weekly", lim.get("weekly"), stale)]
 
 def speech(state, mood, events, fresh_quests, brk, name="kh"):
     if "merge" in events:
