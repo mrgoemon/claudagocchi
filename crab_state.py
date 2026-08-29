@@ -555,36 +555,23 @@ def _htok(n):
     if n >= 1e3: return f"{n / 1e3:.1f}k"
     return str(int(n))
 
-def sessions_line(sess=None):
-    """l5: who needs you. ALWAYS returns a line -- the window's height is fixed at
-    startup, so a stat line that came and went would tear the redraw."""
-    if not sess:
-        return "sessions  …"
-    waiting, working = sess.get("waiting", []), sess.get("working", 0)
-    if not waiting:
-        return f"sessions  all clear  ·  {working} working" if working else "sessions  all clear"
-    n = len(waiting)
-    who = waiting[0].get("name") or "a session"
-    why = waiting[0].get("waiting_for") or "waiting"
-    head = f"● {who} needs you — {why}" if n == 1 else f"● {n} sessions need you"
-    return f"{head}  ·  {working} working" if working else head
+def stat_lines(state, tokens_today, tokens_all=0, rate=None):
+    """l1 = vitals; l2 = tokens used today; l3 = all-time Claude Code tokens;
+    l4 = how fast Claude is burning tokens right now.
 
-def stat_lines(state, today, pr_stats, tokens_today, tokens_all=0, sess=None):
-    """l1 = vitals; l2 = tokens used today; l3 = today's code stats;
-    l4 = all-time Claude Code tokens; l5 = other agent sessions."""
+    ALWAYS returns four lines -- the window's height is measured once at
+    startup, so a stat line that came and went would tear the redraw. `rate` of
+    None means the burn rate has not been sampled yet, not that it is zero.
+    """
     belly = 100 - state["hunger"]
     health = state.get("health", 100.0)
     l1 = f"mood {_meter(state['happiness'])}  energy {_meter(state['energy'])}  belly {_meter(belly)}"
     if health < 100:                       # only shown once there's something to worry about
         l1 += f"  health {_meter(health)}"
     l2 = f"tokens used today  {tokens_today:,}"
-    n = pr_stats.get("prs", 0)
-    prlabel = f"{n} PR" if n == 1 else f"{n} PRs"
-    c = today.get("commits", 0)
-    clabel = f"{c} commit" if c == 1 else f"{c} commits"
-    l3 = f"today  {today.get('added', 0)} lines  ·  {clabel}  ·  {prlabel}"
-    l4 = f"tokens all-time  {tokens_all:,}"
-    return [l1, l2, l3, l4, sessions_line(sess)]
+    l3 = f"tokens all-time  {tokens_all:,}"
+    l4 = "live  …" if rate is None else f"live  {_htok(rate)} tok/min"
+    return [l1, l2, l3, l4]
 
 def speech(state, mood, events, fresh_quests, brk, name="kh"):
     if "merge" in events:

@@ -151,7 +151,7 @@ def snapshot():
         "columns": WIDTH_ENV,
         "sprite": sprite_hash(),
         "window": window_hash(),
-        "window_stats": 4,
+        "window_stats": len(p.STATS),   # what `window` was captured against
         "window_lines": p.render_window(True, stage_h=5).count("\n") + 1,
         "adult_rows_plain": p.crab_rows(False),
     }
