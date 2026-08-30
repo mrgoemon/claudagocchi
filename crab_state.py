@@ -555,17 +555,29 @@ def _htok(n):
     if n >= 1e3: return f"{n / 1e3:.1f}k"
     return str(int(n))
 
-def _limit_line(label, win, stale):
-    """One usage-limit row: `session ●●○○○  31%  · resets 7:10am`.
+def _ago(age):
+    """Age of a stale reading, short enough for the bar."""
+    if age is None:
+        return "?"
+    if age < 3600:
+        return f"{max(1, int(age // 60))}m"
+    if age < 86400:
+        return f"{int(age // 3600)}h"
+    return f"{int(age // 86400)}d"
 
-    A stale or missing reading shows `…` rather than a number -- the cache is
-    only refreshed by Claude Code itself, and an hours-old percentage presented
-    as current is worse than admitting we don't know.
+def _limit_line(label, win, stale, age=""):
+    """One usage-limit row: `session ●●○○○  31%  ·  resets 7:10am`.
+
+    Only Claude Code refreshes the reading, and it can sit unrefreshed for
+    hours, so a stale one still shows its number -- with how old it is instead
+    of a reset time that has probably already passed. Hiding a real number
+    helps nobody; presenting an old one as current would be the dishonest part.
     """
-    if not win or stale:
+    if not win:
         return f"{label:<7} …"
     line = f"{label:<7} {_meter(win['pct'])} {win['pct']:3.0f}%"
-    return f"{line}  ·  resets {win['resets']}" if win.get("resets") else line
+    tail = f"{age} ago" if stale else (f"resets {win['resets']}" if win.get("resets") else "")
+    return f"{line}  ·  {tail}" if tail else line
 
 def stat_lines(state, tokens_today, tokens_all=0, limits=None):
     """l1 = vitals; l2 = tokens used today; l3 = all-time Claude Code tokens;
@@ -582,10 +594,10 @@ def stat_lines(state, tokens_today, tokens_all=0, limits=None):
     l2 = f"tokens used today  {tokens_today:,}"
     l3 = f"tokens all-time  {tokens_all:,}"
     lim = limits or {}
-    stale = lim.get("stale", True)
+    stale, age = lim.get("stale", True), _ago(lim.get("age"))
     return [l1, l2, l3,
-            _limit_line("session", lim.get("session"), stale),
-            _limit_line("weekly", lim.get("weekly"), stale)]
+            _limit_line("session", lim.get("session"), stale, age),
+            _limit_line("weekly", lim.get("weekly"), stale, age)]
 
 def speech(state, mood, events, fresh_quests, brk, name="kh"):
     if "merge" in events:

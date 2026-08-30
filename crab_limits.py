@@ -8,10 +8,11 @@ nothing and needs no credentials.
 Two things it is NOT:
 
   * Not live. The cache is only rewritten when Claude Code itself fetches it,
-    throttled to once every 5 minutes, and Claude Code treats its own cache as
-    unusable past an hour. We use the same hour, and say `stale` rather than
-    show an old number as if it were current -- refreshing it would mean
-    calling a private endpoint with the user's OAuth token.
+    throttled to once every 5 minutes, and in practice it can sit unrefreshed
+    for many hours. Past Claude Code's own one-hour acceptance threshold we
+    mark the reading `stale` and the bar shows its age beside it -- the number
+    is still the best one available, it just isn't current. Refreshing it
+    ourselves would mean calling a private endpoint with the user's OAuth token.
   * Not daily. A Max plan has a rolling 5-hour session window and a weekly
     limit; there is no per-day limit to report.
 
@@ -93,8 +94,9 @@ def read():
         return None
     fetched = cached.get("fetchedAtMs")
     age = (time.time() - fetched / 1000.0) if isinstance(fetched, (int, float)) else None
-    return {"session": session, "weekly": weekly,
+    return {"session": session, "weekly": weekly, "age": age,
             "stale": age is None or age > STALE_AFTER or age < 0}
+
 
 
 if __name__ == "__main__":
