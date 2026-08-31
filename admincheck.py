@@ -39,6 +39,7 @@ def run(scenario, seconds):
     pid, fd = pty.fork()
     if pid == 0:
         os.environ["COLUMNS"] = "100"
+        os.environ["CRAB_NO_USAGE_FETCH"] = "1"
         os.execvp("python3", ["python3", "pixel_crab.py", "--admin", scenario])
     buf, t0 = b"", time.time()
     while time.time() - t0 < seconds:

@@ -50,6 +50,7 @@ class Session:
             # Without this the director starts a game on its own mid-run and its
             # line lands in the bubble instead of the reply being asserted.
             os.environ["CRAB_NO_DIRECTOR"] = "1"
+            os.environ["CRAB_NO_USAGE_FETCH"] = "1"
             os.execvp("python3", ["python3", "pixel_crab.py", "--animate"])
         self.buf = b""
 

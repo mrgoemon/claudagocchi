@@ -17,7 +17,8 @@ import time
 
 
 def run(stage, seconds=6.0, feed=None, cols="100"):
-    env = dict(os.environ, CRAB_STAGE=stage, COLUMNS=cols)
+    env = dict(os.environ, CRAB_STAGE=stage, COLUMNS=cols,
+               CRAB_NO_USAGE_FETCH="1")
     pid, fd = pty.fork()
     if pid == 0:
         os.environ.update(env)

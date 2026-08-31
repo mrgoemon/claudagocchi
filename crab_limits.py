@@ -1,27 +1,28 @@
 #!/usr/bin/env python3
 """How much of the Claude plan's usage limits you've burned through.
 
-Claude Code caches its own `/usage` response -- the numbers behind the usage
-bars -- in ~/.claude.json under `cachedUsageUtilization`. Reading that costs
-nothing and needs no credentials.
+Two sources, in order of preference:
 
-Two things it is NOT:
+  * `fetch()` asks Claude Code for the current numbers via its own `get_usage`
+    control request. Real fetch, zero tokens, ~1.4s, and Claude Code keeps the
+    credentials -- nothing here goes near the auth token.
+  * `read()` falls back to the copy Claude Code cached in ~/.claude.json under
+    `cachedUsageUtilization`. Free, but that block is written ONLY when
+    `/usage` runs -- no startup fetch, no timer -- so it sits frozen for days
+    on a machine where nobody types it. A stale reading still shows its number,
+    with its age beside it, since an old number beats no number as long as it
+    is labelled.
 
-  * Not live. The cache is only rewritten when Claude Code itself fetches it,
-    throttled to once every 5 minutes, and in practice it can sit unrefreshed
-    for many hours. Past Claude Code's own one-hour acceptance threshold we
-    mark the reading `stale` and the bar shows its age beside it -- the number
-    is still the best one available, it just isn't current. Refreshing it
-    ourselves would mean calling a private endpoint with the user's OAuth token.
-  * Not daily. A Max plan has a rolling 5-hour session window and a weekly
-    limit; there is no per-day limit to report.
+Not daily: a Max plan has a rolling 5-hour session window and a weekly limit,
+so there is no per-day figure to report.
 
-Nothing here writes: ~/.claude.json is Claude Code's own config, rewritten
-atomically and often. We read a snapshot and keep no handle.
+Nothing here writes. ~/.claude.json is Claude Code's own config, rewritten
+atomically and often; we read a snapshot and keep no handle.
 """
 import datetime
 import json
 import os
+import subprocess
 import time
 
 CONFIG = os.path.expanduser("~/.claude.json")
@@ -80,24 +81,74 @@ def _window(util, kind, fallback):
     return None
 
 
+def _pack(util, age):
+    session = _window(util, "session", "five_hour")
+    weekly = _window(util, "weekly_all", "seven_day")
+    if session is None and weekly is None:
+        return None
+    return {"session": session, "weekly": weekly, "age": age,
+            "stale": age is None or age > STALE_AFTER or age < 0}
+
+
 def read():
-    """{'session': {...}, 'weekly': {...}, 'stale': bool} -- or None if unknown."""
+    """The cached reading, however old. None if there isn't one."""
     cached = _load()
     if not cached:
         return None
     util = cached.get("utilization")
     if not isinstance(util, dict):
         return None
-    session = _window(util, "session", "five_hour")
-    weekly = _window(util, "weekly_all", "seven_day")
-    if session is None and weekly is None:
-        return None
     fetched = cached.get("fetchedAtMs")
     age = (time.time() - fetched / 1000.0) if isinstance(fetched, (int, float)) else None
-    return {"session": session, "weekly": weekly, "age": age,
-            "stale": age is None or age > STALE_AFTER or age < 0}
+    return _pack(util, age)
+
+
+def fetch(timeout=30):
+    """Ask Claude Code itself for current usage. None if it can't answer.
+
+    The cache is only written when `/usage` runs -- there is no startup fetch
+    and no timer -- so on a machine where nobody types `/usage` it stays frozen
+    for days. `get_usage` is Claude Code's own control request: it performs the
+    real fetch, costs ZERO tokens (no model call), and leaves the credentials
+    entirely to Claude Code, so nothing here ever touches the auth token.
+
+    ANTHROPIC_API_KEY is dropped from the child: an API key outranks the
+    claude.ai login, and Claude Code then reports no subscription at all
+    (`rate_limits_available: false`) -- the crab sets that key for its own chat,
+    so inheriting it here would silently return nothing.
+    """
+    if os.environ.get("CRAB_NO_USAGE_FETCH"):    # harnesses: no network, no spawn
+        return None
+    frame = json.dumps({"type": "control_request", "request_id": "crab",
+                        "request": {"subtype": "get_usage"}}) + "\n"
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
+    try:
+        done = subprocess.run(
+            ["claude", "-p", "--verbose", "--no-session-persistence",
+             "--input-format=stream-json", "--output-format=stream-json"],
+            input=frame, capture_output=True, text=True, timeout=timeout, env=env)
+    except (OSError, subprocess.SubprocessError):
+        return None                       # no claude on PATH, or it hung
+    for line in done.stdout.splitlines():
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            continue
+        if msg.get("type") != "control_response":
+            continue
+        body = (msg.get("response") or {}).get("response") or {}
+        limits = body.get("rate_limits")
+        if body.get("rate_limits_available") and isinstance(limits, dict):
+            return _pack(limits, 0.0)
+    return None
+
+
+def current():
+    """Current usage if Claude Code will tell us, else the last cached reading."""
+    return fetch() or read()
 
 
 
 if __name__ == "__main__":
-    print(json.dumps(read(), indent=2))
+    print(json.dumps(current(), indent=2))

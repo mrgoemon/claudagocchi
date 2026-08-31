@@ -1203,14 +1203,14 @@ def animate(color=True, fps=10, name="kh"):
     # --- plan limits: how much of the session/weekly windows is gone (~15s).
     # Only a read of Claude Code's cached /usage response, so this is cheap --
     # and it only moves when Claude Code itself refetches, every 5 min at best.
-    lim_box = {"v": climits.read()}
+    lim_box = {"v": climits.read()}           # cached first, for an instant frame
     def _limits_worker():
         while True:
-            time.sleep(15)
             try:
-                lim_box["v"] = climits.read()
+                lim_box["v"] = climits.current() or lim_box["v"]
             except Exception:
                 pass
+            time.sleep(600)                   # a ~1.4s spawn; ten minutes is plenty
     threading.Thread(target=_limits_worker, daemon=True).start()
 
     # --- session worker: which of your OTHER agent sessions need a human (~2s).
@@ -1498,7 +1498,7 @@ def _status_frame(color):
     state["pr_cache"] = pr_stats                          # warm the cache for next launch
     cs.save_state(state)
     tok_today, tok_all = ctok.today_all()
-    stats = cs.stat_lines(state, tok_today, tok_all, climits.read())
+    stats = cs.stat_lines(state, tok_today, tok_all, climits.read())  # no spawn here
     sp = cs.speech(state, mood, [], [], cs.break_due(state))
     hoard_g = cs.hoard_glyphs(cs.hoard_summary(state))
     morph = MORPHS[cs.life_stage(state)]
