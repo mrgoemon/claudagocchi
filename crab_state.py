@@ -566,7 +566,7 @@ def _ago(age):
     return f"{int(age // 86400)}d"
 
 def _limit_line(label, win, stale, age=""):
-    """One usage-limit row: `session ●●○○○  31%  ·  resets 7:10am`.
+    """One usage-limit row: `session ●●○○○  31%  ·  resets 10:40 PM`.
 
     Only Claude Code refreshes the reading, and it can sit unrefreshed for
     hours, so a stale one still shows its number -- with how old it is instead
@@ -581,9 +581,10 @@ def _limit_line(label, win, stale, age=""):
 
 def stat_lines(state, tokens_today, tokens_all=0, limits=None):
     """l1 = vitals; l2 = tokens used today; l3 = all-time Claude Code tokens;
-    l4/l5 = how much of the plan's session and weekly limits are gone.
+    l4 = how much of the current 5-hour session limit is gone, and when it
+    resets.
 
-    ALWAYS returns five lines -- the window's height is measured once at
+    ALWAYS returns four lines -- the window's height is measured once at
     startup, so a stat line that came and went would tear the redraw.
     """
     belly = 100 - state["hunger"]
@@ -596,8 +597,7 @@ def stat_lines(state, tokens_today, tokens_all=0, limits=None):
     lim = limits or {}
     stale, age = lim.get("stale", True), _ago(lim.get("age"))
     return [l1, l2, l3,
-            _limit_line("session", lim.get("session"), stale, age),
-            _limit_line("weekly", lim.get("weekly"), stale, age)]
+            _limit_line("session", lim.get("session"), stale, age)]
 
 def speech(state, mood, events, fresh_quests, brk, name="kh"):
     if "merge" in events:

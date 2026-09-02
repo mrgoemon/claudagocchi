@@ -290,8 +290,7 @@ SPEECH = "Welcome back kh!"                 # -> speech bubble later
 # startup, so this list must have exactly as many entries as cs.stat_lines
 # returns -- one short and the first frame is a line shorter than every frame
 # after it, and the in-place redraw tears for the rest of the session.
-STATS = ["~ヽ(｡･ω･｡)", "tokens used today …", "tokens all-time …",
-         "session …", "weekly …"]
+STATS = ["~ヽ(｡･ω･｡)", "tokens used today …", "tokens all-time …", "session …"]
 
 INTRO_TITLE = "Claude"          # what the box calls itself while it plays dead
 INTRO_GREETING = "Welcome back, Kengo!"      # already on screen when it opens
@@ -305,7 +304,7 @@ def _intro_stats():
     stay the same length as STATS -- the redraw height is measured from that.
     """
     cwd = os.getcwd().replace(os.path.expanduser("~"), "~", 1)
-    return ["Opus 5 (1M context) with medium effort · Claude Max", cwd, "",
+    return ["Opus 5 (1M context) with medium effort · Claude Max", cwd,
             "auto mode on (shift+tab to cycle) · ← for agents",
             "◐ medium · /effort · /rc"]
 
@@ -810,7 +809,22 @@ def _boot_wave(x, ground, fps):
 INTRO_STILL_SEC = 4.0        # the held "screenshot" before the blink
 INTRO_HOPS = 2               # its first move, before it changes what it says
 INTRO_SETTLE_SEC = 1.0       # landing beat, then ordinary crab life resumes
-INTRO_FX_SEC = 1.0           # the 文字化け decode that drops the disguise
+INTRO_FX_SEC = 2.0           # the 文字化け decode that drops the disguise
+
+def _intro_limits():
+    """A plausible session reading for the launch video.
+
+    Made up on purpose, and ONLY under CRAB_INTRO: a take should not depend on
+    whatever the real account happens to be sitting at, and a fresh demo save
+    has no history to show. The real crab never fabricates a usage number -- it
+    shows what Claude Code reports, or says it does not know.
+    """
+    resets = datetime.datetime.now() + datetime.timedelta(
+        minutes=random.randint(95, 210))
+    resets = resets.replace(minute=resets.minute // 5 * 5, second=0)
+    return {"session": {"pct": float(random.randint(28, 61)),
+                        "resets": resets.strftime("%-I:%M %p")},
+            "weekly": None, "age": 0.0, "stale": False}
 
 # Half-width katakana and ASCII punctuation, and deliberately nothing else.
 # Both are one column wide by `_vlen` AND in any real terminal, and the top
@@ -1236,14 +1250,17 @@ def animate(color=True, fps=10, name="kh"):
     # Only a read of Claude Code's cached /usage response, so this is cheap --
     # and it only moves when Claude Code itself refetches, every 5 min at best.
     lim_box = {"v": climits.read()}           # cached first, for an instant frame
-    def _limits_worker():
-        while True:
-            try:
-                lim_box["v"] = climits.current() or lim_box["v"]
-            except Exception:
-                pass
-            time.sleep(600)                   # a ~1.4s spawn; ten minutes is plenty
-    threading.Thread(target=_limits_worker, daemon=True).start()
+    if intro_mode:
+        lim_box["v"] = _intro_limits()        # a take shows a made-up session
+    else:
+        def _limits_worker():
+            while True:
+                try:
+                    lim_box["v"] = climits.current() or lim_box["v"]
+                except Exception:
+                    pass
+                time.sleep(600)               # a ~1.4s spawn; ten minutes is plenty
+        threading.Thread(target=_limits_worker, daemon=True).start()
 
     # --- session worker: which of your OTHER agent sessions need a human (~2s).
     # Cheap (a handful of small JSON files) but it shells out to `ps`, so it stays
@@ -1412,15 +1429,13 @@ def animate(color=True, fps=10, name="kh"):
                     x, y, frame, drop = pending.pop(0); emote = None
                 else:
                     x, y, frame, emote = next(gen); drop = None
-                    if intro_scripted:        # first step of its own: decode time
-                        intro_scripted, fx_left = False, int(fps * INTRO_FX_SEC)
-                        fx_order = {}
                 disp = temp_speech if now < temp_until else idle_speech
                 # The launch-video still passes for a Claude session -- Claude's
                 # title, Claude's status bar, a greeting that is already
                 # finished -- and holds it all the way through the wake. The
-                # disguise comes off in one go, as 文字化け, on the crab's first
-                # step under its own steam.
+                # disguise then comes off in one go, as 文字化け, the instant the
+                # crab finishes saying its line (armed below, once the
+                # typewriter has laid down the last character).
                 disguised = intro_scripted
                 if intro_blank > 0:
                     intro_blank -= 1
@@ -1435,6 +1450,9 @@ def animate(color=True, fps=10, name="kh"):
                     type_text, type_start = disp, now
                 typed = type_text[:int((now - type_start) * TYPE_CPS)]
                 bubble = typed + " " * max(_vlen(type_text) - _vlen(typed), 0)  # hold full width
+                if intro_scripted and type_text == INTRO_LINE and typed == type_text:
+                    intro_scripted, fx_left = False, int(fps * INTRO_FX_SEC)
+                    fx_order = {}             # the line has landed -- decode now
                 shown_stats = intro_stats if disguised else cur_stats
                 shown_title = INTRO_TITLE if disguised else None
                 if fx_left > 0:               # mid-decode: garble toward the real thing

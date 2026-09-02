@@ -60,8 +60,8 @@ def _clock(iso):
     except (ValueError, TypeError):
         return ""
     if when.date() == datetime.date.today():
-        return when.strftime("%-I:%M%p").lower()
-    return when.strftime("%a")
+        return when.strftime("%-I:%M %p")
+    return when.strftime("%a %-I:%M %p")
 
 
 def _window(util, kind, fallback):

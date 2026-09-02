@@ -14,7 +14,9 @@ import sys
 import unicodedata
 import time
 
-FRAME_H = 18
+FRAME_H = 17
+WIDTH = 99             # every box row, garble included
+FX = 2.0               # length of the decode
 EYE = "38;2;24;24;28"          # fg(EYE): present only when the eyes are drawn
 STILL = 4.0            # motionless "screenshot" before the blinks
 FPS = 10
@@ -122,12 +124,14 @@ def main():
     kata = re.compile(r"[\uff66-\uff9d]")
     garbled = [i for i, f in enumerate(frames) if kata.search(f.split("\n")[0])]
     decode_at = garbled[0] if garbled else len(frames)
+    line = "let's start tokenmaxxing \U0001F980"
+    typed_at = next((i for i, f in enumerate(frames) if speech(f) == line), len(frames))
     resolved = frames[garbled[-1] + 2:] if garbled else []
     bad_width = []
     for f in frames:
         for line in f.split("\n"):
             plain = re.sub(r"\033\[[0-9;]*[A-Za-z]", "", line).rstrip("\r")
-            if plain[:1] in ("\u256d", "\u2502", "\u2570") and vlen(plain) != 99:
+            if plain[:1] in ("\u256d", "\u2502", "\u2570") and vlen(plain) != WIDTH:
                 bad_width.append(vlen(plain))
     checks = [
         ("frame height constant", codes == [FRAME_H]),
@@ -151,22 +155,24 @@ def main():
          all("/effort" in f for f in early)),
         ("stays disguised as Claude right through the wake",
          all("Claudagocchi" not in f for f in frames[:decode_at])),
-        ("decodes through 文字化け when it starts walking",
-         decode_at < len(frames) and len(garbled) >= 3),
+        ("decodes through 文字化け the moment the line finishes typing",
+         decode_at < len(frames) and 0 <= decode_at - typed_at <= 2),
+        ("the decode runs about %.0fs" % FX,
+         abs(len(garbled) - FX * FPS) <= 3),
         ("and resolves to Claudagocchi",
          bool(resolved) and all("Claudagocchi" in f for f in resolved)),
-        ("every box row stays 99 columns, garble included", not bad_width),
-        ("stats stay Claude's until it moves freely",
-         stats_at > switch),
+        ("every box row stays %d columns, garble included" % WIDTH, not bad_width),
+        ("stats stay Claude's until the decode", stats_at >= decode_at),
         ("real stats arrive in the end", stats_at < len(frames)),
         ("every save path lands in the sandbox",
          bool(paths) and all(p.startswith(demo) for p in paths)),
         ("demo save was written", os.path.exists(os.path.join(demo, "state.json"))),
         ("real token numbers still shown",
          any(re.search(r"tokens used today\s+[1-9]", f) for f in frames)),
-        ("plan limits are on screen",
-         any(re.search(r"session\s+(…|[●○]{5}\s+\d+%)", f) for f in frames)
-         and any(re.search(r"weekly\s+(…|[●○]{5}\s+\d+%)", f) for f in frames)),
+        ("session limit and its reset time are on screen",
+         any(re.search(r"session\s+[●○]{5}\s+\d+%\s+·\s+resets\s+\d+:\d\d [AP]M", f)
+             for f in frames)),
+        ("weekly line is gone", not any("weekly " in f for f in frames)),
         ("git lines are gone", not any("PRs" in f for f in frames)),
         ("no traceback", "Traceback" not in text),
     ]
