@@ -11,12 +11,20 @@ import select
 import signal
 import subprocess
 import sys
+import unicodedata
 import time
 
 FRAME_H = 18
 EYE = "38;2;24;24;28"          # fg(EYE): present only when the eyes are drawn
 STILL = 4.0            # motionless "screenshot" before the blinks
 FPS = 10
+
+
+def vlen(s):
+    """Visible columns, the way pixel_crab measures them."""
+    return sum(0 if unicodedata.combining(c)
+               else (2 if unicodedata.east_asian_width(c) in ("W", "F") else 1)
+               for c in s)
 
 
 def save_paths():
@@ -110,6 +118,17 @@ def main():
     adult_w = int(subprocess.run(
         [sys.executable, "-c", "import pixel_crab;print(pixel_crab.MORPHS['adult'].w)"],
         capture_output=True, text=True, env=dict(os.environ)).stdout.strip() or 0)
+    # The decode: frames whose title is neither name but half-width katakana.
+    kata = re.compile(r"[\uff66-\uff9d]")
+    garbled = [i for i, f in enumerate(frames) if kata.search(f.split("\n")[0])]
+    decode_at = garbled[0] if garbled else len(frames)
+    resolved = frames[garbled[-1] + 2:] if garbled else []
+    bad_width = []
+    for f in frames:
+        for line in f.split("\n"):
+            plain = re.sub(r"\033\[[0-9;]*[A-Za-z]", "", line).rstrip("\r")
+            if plain[:1] in ("\u256d", "\u2502", "\u2570") and vlen(plain) != 99:
+                bad_width.append(vlen(plain))
     checks = [
         ("frame height constant", codes == [FRAME_H]),
         ("always the adult crab, never the fresh-save egg",
@@ -130,8 +149,13 @@ def main():
          all("Claude " in f and "Claudagocchi" not in f for f in early)),
         ("Claude's status bar while disguised",
          all("/effort" in f for f in early)),
-        ("reveals Claudagocchi after the blink",
-         bool(late) and all("Claudagocchi" in f for f in late)),
+        ("stays disguised as Claude right through the wake",
+         all("Claudagocchi" not in f for f in frames[:decode_at])),
+        ("decodes through 文字化け when it starts walking",
+         decode_at < len(frames) and len(garbled) >= 3),
+        ("and resolves to Claudagocchi",
+         bool(resolved) and all("Claudagocchi" in f for f in resolved)),
+        ("every box row stays 99 columns, garble included", not bad_width),
         ("stats stay Claude's until it moves freely",
          stats_at > switch),
         ("real stats arrive in the end", stats_at < len(frames)),

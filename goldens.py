@@ -122,9 +122,15 @@ def sweep():
         for y in (ground, max(ground - 1, 0), max(ground - 2, 0)):
             for x in (-5, 0, 50, inner - w, inner + 9):
                 for leg in p.LEG_POSES:
+                    # The title path is measured with len(), not _vlen (see
+                    # render_window), so sweep a garbled title too: a glyph
+                    # whose two measurements disagree jags the top border and
+                    # nothing else here would notice.
+                    title = (None if x == -5
+                             else p._scramble(p.TITLE, 0.4, p._scramble_order(p.TITLE)))
                     s = p.render_window(
                         True, stage_h=stage_h, x=x, y=y, frame=p.pose(leg=leg),
-                        speech="hi", stats=list("abcd"), emote="*", **kw)
+                        speech="hi", stats=list("abcd"), emote="*", title=title, **kw)
                     lines = s.count("\n") + 1
                     if expect_lines is None:
                         expect_lines = lines

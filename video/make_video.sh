@@ -16,11 +16,11 @@ FPS=30
 # ---- timeline (seconds into the recording) ---------------------------------
 T0=1.0                 # when intro.py started, relative to recording start
 CRAB_T=$(echo "$T0 + 5.1" | bc)      # crab frame appears (intro.py timings)
-# The crab holds a dead-still frame for 4.0s, blinks twice (~0.8s), hops (~1s),
-# then changes its line and gets on with its life. Stay zoomed in through the
-# blinks and the hop, and be pulled back by the time it starts walking.
+# 4.0s dead still, two blinks (~0.8s), a hop (~1s), a beat, then at ~8.8s it
+# takes its first step and the whole UI decodes out of 文字化け over 1s. Pull
+# back during the hop so the decode is revealed on the full frame, not cropped.
 ZOUT_START=$(echo "$CRAB_T + 5.9" | bc)
-ZOUT_END=$(echo "$CRAB_T + 8.2" | bc)
+ZOUT_END=$(echo "$CRAB_T + 8.4" | bc)
 # The vitals only appear once the crab is wandering on its own, ~11s after
 # the frame opens, so hold well past that before the card.
 T_FADE=22              # end-card crossfade starts

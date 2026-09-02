@@ -810,6 +810,37 @@ def _boot_wave(x, ground, fps):
 INTRO_STILL_SEC = 4.0        # the held "screenshot" before the blink
 INTRO_HOPS = 2               # its first move, before it changes what it says
 INTRO_SETTLE_SEC = 1.0       # landing beat, then ordinary crab life resumes
+INTRO_FX_SEC = 1.0           # the 文字化け decode that drops the disguise
+
+# Half-width katakana and ASCII punctuation, and deliberately nothing else.
+# Both are one column wide by `_vlen` AND in any real terminal, and the top
+# border is measured with len() rather than _vlen (see render_window), so a
+# glyph whose two measurements disagree jags the box. That rules out ▒▓█, the
+# box-drawing set and ◆※ -- all "ambiguous" width, scored 1 here and drawn 2 in
+# a CJK locale, which would break the frame exactly where no test can see it.
+_GARBLE = [chr(c) for c in range(0xFF66, 0xFF9E)] + list("!<>/\\|=+*#%&$@~^_")
+
+def _scramble(text, progress, order):
+    """`text` part-decoded: settled positions are real, the rest are garble.
+
+    `order` is a shuffled index list, so characters lock in at random -- walk
+    it up to `progress` and everything before that point has resolved. Wide
+    characters are left alone: swapping one for a half-width glyph would shift
+    the line's visible width and jitter the centring.
+    """
+    settled = set(order[:int(len(order) * progress)])
+    out = []
+    for i, ch in enumerate(text):
+        if i in settled or ch == " " or unicodedata.east_asian_width(ch) in ("W", "F"):
+            out.append(ch)
+        else:
+            out.append(random.choice(_GARBLE))
+    return "".join(out)
+
+def _scramble_order(text):
+    order = [i for i, ch in enumerate(text) if ch != " "]
+    random.shuffle(order)
+    return order
 
 def _wake_scene(x, ground, fps):
     """CRAB_INTRO opening for the launch video.
@@ -1126,6 +1157,7 @@ def animate(color=True, fps=10, name="kh"):
     # moving under its own steam -- the vitals are the last thing to give the
     # disguise away, well after the title has already changed.
     intro_scripted = False
+    fx_left, fx_order = 0, {}     # the 文字化け decode, armed on the crab's first step
     if os.environ.get("CRAB_INTRO"):
         intro_mode, intro_stats, intro_scripted = True, _intro_stats(), True
         wake = _wake_scene(pos["x"], ground, fps)
@@ -1380,14 +1412,17 @@ def animate(color=True, fps=10, name="kh"):
                     x, y, frame, drop = pending.pop(0); emote = None
                 else:
                     x, y, frame, emote = next(gen); drop = None
-                    intro_scripted = False    # off the script -- moving on its own now
+                    if intro_scripted:        # first step of its own: decode time
+                        intro_scripted, fx_left = False, int(fps * INTRO_FX_SEC)
+                        fx_order = {}
                 disp = temp_speech if now < temp_until else idle_speech
                 # The launch-video still passes for a Claude session -- Claude's
                 # title, Claude's status bar, a greeting that is already
-                # finished -- until the crab blinks and gives the whole thing
-                # away.
-                disguised = intro_blank > 0
-                if disguised:
+                # finished -- and holds it all the way through the wake. The
+                # disguise comes off in one go, as 文字化け, on the crab's first
+                # step under its own steam.
+                disguised = intro_scripted
+                if intro_blank > 0:
                     intro_blank -= 1
                 if intro_greet > 0:               # greeting outlasts the disguise
                     intro_greet, disp = intro_greet - 1, INTRO_GREETING
@@ -1400,10 +1435,20 @@ def animate(color=True, fps=10, name="kh"):
                     type_text, type_start = disp, now
                 typed = type_text[:int((now - type_start) * TYPE_CPS)]
                 bubble = typed + " " * max(_vlen(type_text) - _vlen(typed), 0)  # hold full width
+                shown_stats = intro_stats if disguised else cur_stats
+                shown_title = INTRO_TITLE if disguised else None
+                if fx_left > 0:               # mid-decode: garble toward the real thing
+                    p = 1.0 - fx_left / max(1, int(fps * INTRO_FX_SEC))
+                    for key, s in [("t", TITLE)] + list(enumerate(cur_stats)):
+                        if key not in fx_order:
+                            fx_order[key] = _scramble_order(s)
+                    shown_title = _scramble(TITLE, p, fx_order["t"])
+                    shown_stats = [_scramble(s, p, fx_order[i])
+                                   for i, s in enumerate(cur_stats)]
+                    fx_left -= 1
                 win = render_window(color, stage_h=stage_h, x=x, y=y, frame=frame,
                                     speech=bubble, hoard=hoard_g,
-                                    stats=intro_stats if intro_scripted else cur_stats,
-                                    title=INTRO_TITLE if disguised else None,
+                                    stats=shown_stats, title=shown_title,
                                     drop=drop, emote=emote, morph=morph,
                                     headstone=bool(state.get("graveyard")))
             win += "\n" + _input_line(chat_buf, inner, color, chat_ok)

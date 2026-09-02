@@ -27,8 +27,9 @@ and commit numbers are still real — only the save is redirected.
 
 `intro.py` fakes the shell prompt and types `claude`, replays the captured
 launch screen, then execs `CRAB_INTRO=1 pixel_crab.py --animate` — the env var
-holds the crab dead still with an empty speech bubble for 4s (so it reads as a
-screenshot), then blinks it awake into the normal boot wave (`_wake_scene`).
+holds the crab dead still for 4s wearing Claude's title and status bar (so it
+reads as a screenshot of a Claude session), blinks it awake, hops, and on its
+first real step the disguise decodes out of 文字化け into the Claudagocchi UI.
 The zoom keyframes in `make_video.sh` depend on those fixed timings.
 
 `python3 video/check_intro.py` asserts the opening still holds for 4s with the
