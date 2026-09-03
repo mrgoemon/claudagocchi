@@ -127,7 +127,8 @@ def sweep():
                     # whose two measurements disagree jags the top border and
                     # nothing else here would notice.
                     title = (None if x == -5
-                             else p._scramble(p.TITLE, 0.4, p._scramble_order(p.TITLE)))
+                             else p._infest(p.INTRO_TITLE, p.TITLE, 0.4,
+                                            p._infest_schedule(inner, 0.0, 0.45, 0.22)))
                     s = p.render_window(
                         True, stage_h=stage_h, x=x, y=y, frame=p.pose(leg=leg),
                         speech="hi", stats=list("abcd"), emote="*", title=title, **kw)

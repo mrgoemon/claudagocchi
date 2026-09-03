@@ -810,6 +810,9 @@ INTRO_STILL_SEC = 4.0        # the held "screenshot" before the blink
 INTRO_HOPS = 2               # its first move, before it changes what it says
 INTRO_SETTLE_SEC = 1.0       # landing beat, then ordinary crab life resumes
 INTRO_FX_SEC = 2.0           # the 文字化け decode that drops the disguise
+FX_STAGGER = 0.09            # head start between rows, so they don't all go at once
+FX_SPAN = 0.45               # how long the blot takes to reach a row's far end
+FX_HOLD = 0.22               # how long a column stays garbled before it settles
 
 def _intro_limits():
     """A plausible session reading for the launch video.
@@ -834,27 +837,47 @@ def _intro_limits():
 # a CJK locale, which would break the frame exactly where no test can see it.
 _GARBLE = [chr(c) for c in range(0xFF66, 0xFF9E)] + list("!<>/\\|=+*#%&$@~^_")
 
-def _scramble(text, progress, order):
-    """`text` part-decoded: settled positions are real, the rest are garble.
+def _infest_schedule(width, start, span, hold):
+    """Per-column (infect_at, resolve_at), blooming out from one random column.
 
-    `order` is a shuffled index list, so characters lock in at random -- walk
-    it up to `progress` and everything before that point has resolved. Wide
-    characters are left alone: swapping one for a half-width glyph would shift
-    the line's visible width and jitter the centring.
+    Distance from the seed decides when a column is taken, so the corruption
+    spreads from a point instead of landing everywhere at once, and `hold`
+    keeps a column garbled for a beat before it settles -- that lingering is
+    what makes it read as something spreading rather than a wipe. Clamped so
+    every column has resolved by the end of the transition.
     """
-    settled = set(order[:int(len(order) * progress)])
-    out = []
-    for i, ch in enumerate(text):
-        if i in settled or ch == " " or unicodedata.east_asian_width(ch) in ("W", "F"):
-            out.append(ch)
-        else:
-            out.append(random.choice(_GARBLE))
-    return "".join(out)
+    seed = random.randrange(max(1, width))
+    reach = max(seed, width - seed) or 1
+    sched = []
+    for j in range(width):
+        infect = start + (abs(j - seed) / reach) * span + random.uniform(0, 0.06)
+        infect = max(0.0, min(infect, 1.0 - hold))
+        sched.append((infect, min(infect + hold, 1.0)))
+    return sched
 
-def _scramble_order(text):
-    order = [i for i, ch in enumerate(text) if ch != " "]
-    random.shuffle(order)
-    return order
+def _infest(old, new, progress, sched):
+    """One line partway through old -> garbled -> new, column by column.
+
+    Both strings are needed, because the point is that the original stays on
+    screen and gets eaten: a column shows its ORIGINAL character right up until
+    the infection reaches it. Columns past the end of whichever string applies
+    come back as None and are trimmed off the tail, so a line only grows (or
+    shrinks) as the infection actually gets there -- otherwise the title would
+    snap to its full new width on frame one and shove the border sideways.
+    """
+    out = []
+    for j in range(max(len(old), len(new))):
+        infect_at, resolve_at = sched[min(j, len(sched) - 1)]
+        if progress < infect_at:
+            ch = old[j] if j < len(old) else None
+        elif progress < resolve_at:
+            ch = random.choice(_GARBLE)
+        else:
+            ch = new[j] if j < len(new) else None
+        out.append(ch)
+    while out and out[-1] is None:
+        out.pop()
+    return "".join(" " if c is None else c for c in out)
 
 def _wake_scene(x, ground, fps):
     """CRAB_INTRO opening for the launch video.
@@ -1171,7 +1194,7 @@ def animate(color=True, fps=10, name="kh"):
     # moving under its own steam -- the vitals are the last thing to give the
     # disguise away, well after the title has already changed.
     intro_scripted = False
-    fx_left, fx_order = 0, {}     # the 文字化け decode, armed on the crab's first step
+    fx_left, fx_was, fx_sched = 0, [], []   # the 文字化け infestation, armed below
     if os.environ.get("CRAB_INTRO"):
         intro_mode, intro_stats, intro_scripted = True, _intro_stats(), True
         wake = _wake_scene(pos["x"], ground, fps)
@@ -1451,17 +1474,21 @@ def animate(color=True, fps=10, name="kh"):
                 typed = type_text[:int((now - type_start) * TYPE_CPS)]
                 bubble = typed + " " * max(_vlen(type_text) - _vlen(typed), 0)  # hold full width
                 if intro_scripted and type_text == INTRO_LINE and typed == type_text:
+                    # The line has landed: start eating the disguise. Keep what
+                    # is on screen now as the "before" -- the infestation works
+                    # on it, so it has to be captured before the flag drops.
                     intro_scripted, fx_left = False, int(fps * INTRO_FX_SEC)
-                    fx_order = {}             # the line has landed -- decode now
+                    fx_was = [INTRO_TITLE] + list(intro_stats or [])
+                    fx_sched = [_infest_schedule(inner, i * FX_STAGGER,
+                                                 FX_SPAN, FX_HOLD)
+                                for i in range(len(fx_was))]
                 shown_stats = intro_stats if disguised else cur_stats
                 shown_title = INTRO_TITLE if disguised else None
-                if fx_left > 0:               # mid-decode: garble toward the real thing
+                if fx_left > 0:               # the disguise is being eaten
                     p = 1.0 - fx_left / max(1, int(fps * INTRO_FX_SEC))
-                    for key, s in [("t", TITLE)] + list(enumerate(cur_stats)):
-                        if key not in fx_order:
-                            fx_order[key] = _scramble_order(s)
-                    shown_title = _scramble(TITLE, p, fx_order["t"])
-                    shown_stats = [_scramble(s, p, fx_order[i])
+                    shown_title = _infest(fx_was[0], TITLE, p, fx_sched[0])
+                    shown_stats = [_infest(fx_was[i + 1] if i + 1 < len(fx_was) else "",
+                                           s, p, fx_sched[min(i + 1, len(fx_sched) - 1)])
                                    for i, s in enumerate(cur_stats)]
                     fx_left -= 1
                 win = render_window(color, stage_h=stage_h, x=x, y=y, frame=frame,

@@ -122,7 +122,7 @@ def main():
         capture_output=True, text=True, env=dict(os.environ)).stdout.strip() or 0)
     # The decode: frames whose title is neither name but half-width katakana.
     kata = re.compile(r"[\uff66-\uff9d]")
-    garbled = [i for i, f in enumerate(frames) if kata.search(f.split("\n")[0])]
+    garbled = [i for i, f in enumerate(frames) if kata.search(f)]
     decode_at = garbled[0] if garbled else len(frames)
     line = "let's start tokenmaxxing \U0001F980"
     typed_at = next((i for i, f in enumerate(frames) if speech(f) == line), len(frames))
@@ -155,10 +155,17 @@ def main():
          all("/effort" in f for f in early)),
         ("stays disguised as Claude right through the wake",
          all("Claudagocchi" not in f for f in frames[:decode_at])),
-        ("decodes through 文字化け the moment the line finishes typing",
-         decode_at < len(frames) and 0 <= decode_at - typed_at <= 2),
+        # It arms on the exact frame the line lands, but the blot starts at a
+        # single seeded column with jitter, so the first VISIBLE garble trails
+        # that by a frame or two -- which is the effect, not a delay.
+        ("decodes through 文字化け just after the line finishes typing",
+         decode_at < len(frames) and 0 <= decode_at - typed_at <= 5),
         ("the decode runs about %.0fs" % FX,
-         abs(len(garbled) - FX * FPS) <= 3),
+         abs(len(garbled) - FX * FPS) <= 4),
+        ("the old UI survives into it and is eaten gradually",
+         any(kata.search(f) and ("/effort" in f or "Opus 5" in f) for f in frames)),
+        ("rows are taken at different times, not all at once",
+         any(kata.search(f) and "Claudagocchi" in f for f in frames)),
         ("and resolves to Claudagocchi",
          bool(resolved) and all("Claudagocchi" in f for f in resolved)),
         ("every box row stays %d columns, garble included" % WIDTH, not bad_width),
@@ -179,6 +186,8 @@ def main():
     for name, ok in checks:
         print(f"  {'OK  ' if ok else 'FAIL'} {name}")
     print(f"\n  frames={len(frames)} cursor-up={codes} bubbles={bubbles!r}")
+    print(f"  typed_at={typed_at} decode_at={decode_at} garbled={len(garbled)}"
+          f" stats_at={stats_at} switch={switch}")
     ok = all(c[1] for c in checks)
     print("  INTRO:", "PASS" if ok else "FAIL")
     return 0 if ok else 1
