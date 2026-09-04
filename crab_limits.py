@@ -81,12 +81,38 @@ def _window(util, kind, fallback):
     return None
 
 
+def _scoped(util):
+    """The per-model weekly window, labelled with whichever model it covers.
+
+    There is no per-model SESSION window -- the API only scopes the weekly one
+    -- and which model it covers is per-account, so the label is read from the
+    payload rather than hardcoded: an account on Opus gets an Opus bar without
+    a code change. Often the tighter of the two weeklies, and so the one that
+    runs out first.
+    """
+    for row in util.get("limits") or []:
+        if isinstance(row, dict) and row.get("kind") == "weekly_scoped":
+            pct = row.get("percent")
+            name = ((row.get("scope") or {}).get("model") or {}).get("display_name")
+            if isinstance(pct, (int, float)) and name:
+                return {"label": str(name).lower(), "pct": float(pct),
+                        "resets": _clock(row.get("resets_at"))}
+    for row in util.get("model_scoped") or []:          # same numbers, flat form
+        if isinstance(row, dict) and isinstance(row.get("utilization"), (int, float)):
+            name = row.get("display_name")
+            if name:
+                return {"label": str(name).lower(),
+                        "pct": float(row["utilization"]),
+                        "resets": _clock(row.get("resets_at"))}
+    return None
+
+
 def _pack(util, age):
     session = _window(util, "session", "five_hour")
     weekly = _window(util, "weekly_all", "seven_day")
     if session is None and weekly is None:
         return None
-    return {"session": session, "weekly": weekly, "age": age,
+    return {"session": session, "weekly": weekly, "model": _scoped(util), "age": age,
             "stale": age is None or age > STALE_AFTER or age < 0}
 
 

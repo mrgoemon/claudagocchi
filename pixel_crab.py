@@ -290,7 +290,8 @@ SPEECH = "Welcome back kh!"                 # -> speech bubble later
 # startup, so this list must have exactly as many entries as cs.stat_lines
 # returns -- one short and the first frame is a line shorter than every frame
 # after it, and the in-place redraw tears for the rest of the session.
-STATS = ["~ヽ(｡･ω･｡)", "tokens used today …", "tokens all-time …", "session …"]
+STATS = ["~ヽ(｡･ω･｡)", "tokens used today …", "tokens all-time …",
+         "session …", "weekly …"]
 
 INTRO_TITLE = "Claude"          # what the box calls itself while it plays dead
 INTRO_GREETING = "Welcome back, Kengo!"      # already on screen when it opens
@@ -304,7 +305,7 @@ def _intro_stats():
     stay the same length as STATS -- the redraw height is measured from that.
     """
     cwd = os.getcwd().replace(os.path.expanduser("~"), "~", 1)
-    return ["Opus 5 (1M context) with medium effort · Claude Max", cwd,
+    return ["Opus 5 (1M context) with medium effort · Claude Max", cwd, "",
             "auto mode on (shift+tab to cycle) · ← for agents",
             "◐ medium · /effort · /rc"]
 
@@ -825,8 +826,11 @@ def _intro_limits():
     resets = datetime.datetime.now() + datetime.timedelta(
         minutes=random.randint(95, 210))
     resets = resets.replace(minute=resets.minute // 5 * 5, second=0)
+    week = datetime.datetime.now() + datetime.timedelta(days=random.randint(2, 5))
     return {"session": {"pct": float(random.randint(28, 61)),
                         "resets": resets.strftime("%-I:%M %p")},
+            "model": {"label": "fable", "pct": float(random.randint(18, 47)),
+                      "resets": week.strftime("%a")},
             "weekly": None, "age": 0.0, "stale": False}
 
 # Braille dots, light shade, and ASCII punctuation -- deliberately nothing else.

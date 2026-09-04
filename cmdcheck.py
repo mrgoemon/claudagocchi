@@ -19,7 +19,7 @@ import sys
 import time
 
 SPEECH_ROW = 2          # top, blank, speech, ...
-FRAME_H = 17            # window + input line; also the anti-tear assertion
+FRAME_H = 18            # window + input line; also the anti-tear assertion
 
 # (typed line, substring the bubble must end up containing, full-screen page?)
 CASES = [

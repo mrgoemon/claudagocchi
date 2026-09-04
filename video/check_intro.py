@@ -14,7 +14,7 @@ import sys
 import unicodedata
 import time
 
-FRAME_H = 17
+FRAME_H = 18
 WIDTH = 99             # every box row, garble included
 FX = 2.0               # length of the decode
 EYE = "38;2;24;24;28"          # fg(EYE): present only when the eyes are drawn
@@ -202,7 +202,8 @@ def main():
         ("session limit and its reset time are on screen",
          any(re.search(r"session\s+[█░]{20}\s+\d+%\s+·\s+resets\s+\d+:\d\d [AP]M", f)
              for f in frames)),
-        ("weekly line is gone", not any("weekly " in f for f in frames)),
+        ("the per-model weekly bar is on screen",
+         any(re.search(r"fable\s+[█░]{20}\s+\d+%", f) for f in frames)),
         ("git lines are gone", not any("PRs" in f for f in frames)),
         ("no traceback", "Traceback" not in text),
     ]

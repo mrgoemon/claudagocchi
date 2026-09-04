@@ -613,8 +613,14 @@ def stat_lines(state, tokens_today, tokens_all=0, limits=None):
     l3 = f"tokens all-time  {tokens_all:,}"
     lim = limits or {}
     stale, age = lim.get("stale", True), _ago(lim.get("age"))
+    # Row 5 is the per-model weekly. Where the account has none, fall back to
+    # the all-models weekly rather than a dead row: the line count is fixed at
+    # startup, so this has to render something, and the label says which it is.
+    model = lim.get("model")
+    scoped = (model["label"], model) if model else ("weekly", lim.get("weekly"))
     return [l1, l2, l3,
-            _limit_line("session", lim.get("session"), stale, age)]
+            _limit_line("session", lim.get("session"), stale, age),
+            _limit_line(scoped[0], scoped[1], stale, age)]
 
 def speech(state, mood, events, fresh_quests, brk, name="kh"):
     if "merge" in events:
