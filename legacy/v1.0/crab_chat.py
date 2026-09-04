@@ -5,38 +5,11 @@ Kept separate (and lazily imported) so the crab still runs with no `anthropic`
 package installed; chat just stays disabled until it's available + a key is set.
 """
 import re
-import threading
 
 import crab_state as cs
 
 MODEL = "claude-haiku-4-5"         # cheap + fast, plenty for short crab chit-chat
 NAME = "kh"
-
-# Both calls run on daemon threads inside the animation loop, so a hung request
-# is invisible: the `except` can't fire until it resolves and the crab just never
-# answers. Fail fast instead so the fallback line always gets a chance.
-ASK_TIMEOUT = 18.0                 # a reply is one short line; 18s is generous
-DIRECT_TIMEOUT = 10.0              # the director only returns a tiny json blob
-MAX_RETRIES = 1                    # worst case is timeout x (MAX_RETRIES + 1)
-
-_client = None                     # built lazily, then reused across calls
-_client_key = None
-_client_lock = threading.Lock()
-
-def _client_for(timeout):
-    """The shared Anthropic client, with a per-call timeout. None if we can't
-    build one (no key, no SDK). Rebuilt if the saved key changed under us."""
-    global _client, _client_key
-    key = cs.anthropic_key()
-    if not key:
-        return None
-    import anthropic
-    with _client_lock:
-        if _client is None or _client_key != key:
-            _client = anthropic.Anthropic(api_key=key, max_retries=MAX_RETRIES)
-            _client_key = key
-        client = _client
-    return client.with_options(timeout=timeout)   # cheap copy, same connection pool
 
 def available():
     """True only if we can actually chat: SDK installed + a key resolvable
@@ -71,9 +44,8 @@ def direct(vit, games):
     it's go-time, else None. Kept rare by the prompt. Never raises."""
     try:
         import json
-        client = _client_for(DIRECT_TIMEOUT)
-        if client is None:
-            return None
+        import anthropic
+        client = anthropic.Anthropic(api_key=cs.anthropic_key())
         system = (
             f"You direct a tiny terminal crab pet. fairly often, as a treat, it "
             f"'codes' and then watches a small self-playing minigame. decide if RIGHT "
@@ -105,9 +77,8 @@ def ask(history, vit):
     """Send the conversation to Claude and return the crab's one-line reply.
     Never raises — returns a friendly fallback line on any error."""
     try:
-        client = _client_for(ASK_TIMEOUT)
-        if client is None:
-            return "(my api key seems off!)"
+        import anthropic
+        client = anthropic.Anthropic(api_key=cs.anthropic_key())
         resp = client.messages.create(
             model=MODEL, max_tokens=64, system=_system(vit), messages=history,
         )
@@ -121,8 +92,6 @@ def ask(history, vit):
         msg = e.__class__.__name__
         if "Authentication" in msg:
             return "(my api key seems off!)"
-        if "Timeout" in msg:            # before Connection: APITimeoutError is one
-            return "(thinking too slow, ask me again?)"
         if "Connection" in msg:
             return "(can't reach my brain rn)"
         return "(brain hiccup, try again?)"

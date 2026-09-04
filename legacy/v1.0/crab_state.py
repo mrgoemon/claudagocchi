@@ -17,55 +17,22 @@ Pure stdlib. State lives in ~/.claude-crab/{state,config}.json.
 """
 import os
 import re
-import sys
 import json
 import time
 import random
 import datetime
 import subprocess
-import tempfile
 import pathlib
 
-# CRAB_SAVE_DIR relocates the whole save. The launch-video demo points it at a
-# throwaway crab so recording a take cannot read or write the real pet; it is
-# deliberately narrow -- Claude Code's own data still comes from ~/.claude, so
-# the token and session counts on screen stay real.
-DIR = pathlib.Path(os.environ.get("CRAB_SAVE_DIR")
-                   or pathlib.Path.home() / ".claude-crab")
+DIR = pathlib.Path.home() / ".claude-crab"
 STATE = DIR / "state.json"
 CONFIG = DIR / "config.json"
-PRE_DEATH = DIR / "state.pre-death.json"   # safety copy taken before a permadeath reset
-
-# --- versions ----------------------------------------------------------------
-# v1.0 was the immortal crab: vitals that decayed but never ran out, one fixed
-# sprite, no age and no end. v2.0 gives it a life cycle -- it grows, it can be
-# lost, and it remembers the ones before it.
-#
-# Loading a v1.0 save is seamless: missing keys get defaults, and the crab is
-# placed at the stage its existing age already earned (see `_seed_stage`) rather
-# than demoted to an egg. The v1.0 SOURCE is frozen under legacy/v1.0/ and is
-# never referenced from here.
-VERSION = "2.0"
-
-# How fast the crab's clock runs. Admin mode winds this up to demonstrate days of
-# neglect in seconds; it is 1.0 in normal use.
-TIME_SCALE = float(os.environ.get("CRAB_TIME_SCALE") or 1.0)
 
 # --- tuning knobs (per hour unless noted) -----------------------------------
-# The clock is workday-scaled. A single 0-100 bar cannot express both "peckish
-# after 4h" and "dead after 5d", so hunger saturates early and `health` — a
-# second, much slower axis that only moves while starving — carries the rest:
-#
-#   idle  4h  -> hunger  32, health 100   peckish
-#   idle 12.5h -> hunger 100, health 100   starving begins
-#   idle  1d  -> hunger 100, health  88   hungry
-#   idle  3d  -> hunger 100, health  40   critical
-#   idle ~4.7d -> hunger 100, health   0   dies
-HUNGER_PER_HR = 8.0       # belly empties (0 = full, 100 = starving) in ~12.5h
+HUNGER_PER_HR = 30.0      # belly empties (0 = full, 100 = starving); visible over a session
 COUPLE_PER_HR = 0.6       # how fast energy & mood drift toward the current belly level
-STARVE_AT = 90.0          # hunger at or above this counts as starving
-HEALTH_DRAIN_PER_HR = 1.0    # health lost per hour while starving
-HEALTH_REGEN_PER_HR = 4.0    # health recovered per hour when not starving
+FEED_PER_COMMIT  = 22     # hunger removed per new commit (refills the belly)
+HAPPY_PER_COMMIT = 12
 BREAK_AFTER_MIN = 50      # nudge to stretch after this much unbroken time
 IDLE_RESET_MIN = 90       # a gap this long starts a fresh work session
 MARATHON_MIN = 180        # session longer than this -> "tired"
@@ -74,96 +41,15 @@ def _now(): return time.time()
 def _clamp(v, lo=0.0, hi=100.0): return max(lo, min(hi, v))
 
 # --- persistence ------------------------------------------------------------
-# config.json holds an API key, so the whole directory is ours alone. The modes
-# are re-applied on every save, not just at creation, so saves written before
-# this existed (0644) get tightened the next time the crab breathes.
-DIR_MODE = 0o700
-FILE_MODE = 0o600
-
-def _short(path):
-    """~/.claude-crab/state.json rather than the whole absolute path."""
-    try:
-        return "~/" + str(path.relative_to(pathlib.Path.home()))
-    except ValueError:
-        return str(path)
-
-def _quarantine(path):
-    """Move an unreadable save aside instead of letting the next save eat it.
-    Named like the other keepsakes in ~/.claude-crab (state.pre-death.json,
-    state.v1-backup-<stamp>.json). Returns the new path, or None if even that
-    failed."""
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    for n in range(1, 100):                 # two wrecks in one second is still two
-        tag = stamp if n == 1 else f"{stamp}-{n}"
-        dest = path.with_name(f"{path.stem}.corrupt-{tag}{path.suffix}")
-        if not dest.exists():
-            break
-    try:
-        os.replace(path, dest)
-        try:
-            os.chmod(dest, FILE_MODE)       # a wrecked config.json still holds a key
-        except OSError:
-            pass
-        return dest
-    except Exception:
-        return None
-
 def _load(path, default):
-    """Missing file -> defaults, silently: that is a first run. A file that EXISTS
-    but won't parse is a different thing entirely -- state.json carries the
-    graveyard, and returning defaults there would hatch a new egg and overwrite
-    every crab you ever raised on the next save. Keep the wreckage and say so."""
-    if not path.exists():
+    try:
+        return json.loads(path.read_text())
+    except Exception:
         return dict(default)
-    try:
-        data = json.loads(path.read_text())
-        if not isinstance(data, dict):
-            raise ValueError(f"expected an object, got {type(data).__name__}")
-        return data
-    except Exception as e:
-        kept = _quarantine(path)
-        print(f"\ncrab: {_short(path)} is damaged and could not be read ({e}).", file=sys.stderr)
-        if kept:
-            print(f"      your old file is kept at {_short(kept)} — nothing was deleted.",
-                  file=sys.stderr)
-            if path == STATE:
-                print("      starting from a fresh save; `crab --undo` restores the last "
-                      "snapshot.", file=sys.stderr)
-        else:
-            print(f"      it could NOT be moved aside — copy {_short(path)} somewhere safe "
-                  "now, it will be overwritten.", file=sys.stderr)
-        print(file=sys.stderr)
-        return dict(default)
-
-def _write(path, text):
-    """Atomic write. `_save` runs inside the animation loop, so a Ctrl-C or a crash
-    lands mid-write often enough to matter: a truncate-in-place would leave a
-    half-file where the crab's whole history used to be. Serialize, fsync a temp
-    file in the SAME directory, then rename over the target -- a reader sees the
-    old file or the new one, never a hole."""
-    d = path.parent
-    d.mkdir(parents=True, exist_ok=True)
-    try:
-        os.chmod(d, DIR_MODE)
-    except OSError:
-        pass                                # someone else's dir; the file mode still holds
-    fd, tmp = tempfile.mkstemp(dir=d, prefix=path.name + ".", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w") as f:       # takes the fd over, closes it either way
-            os.fchmod(f.fileno(), FILE_MODE)   # BEFORE the rename: replace keeps THIS mode
-            f.write(text)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-    except BaseException:                   # incl. Ctrl-C -- don't litter .tmp files
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
 
 def _save(path, data):
-    _write(path, json.dumps(data, indent=2))
+    DIR.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2))
 
 def load_config():
     return _load(CONFIG, {"repos": [], "author": None})
@@ -181,31 +67,16 @@ def set_anthropic_key(key):
     cfg["anthropic_key"] = key
     save_config(cfg)
 
-def default_career():
-    """Per-generation tallies. These decide which adult form the crab grows into,
-    and they are what a memorial remembers."""
-    return {"prs": 0, "commits": 0, "tokens_mtok": 0.0,
-            "games_played": 0, "games_won": 0, "neglect_hours": 0.0,
-            "peak_streak": 0}
-
 def default_state():
     n = _now()
     return {"born": n, "last_seen": n, "hunger": 20.0, "energy": 80.0,
-            "happiness": 70.0, "health": 100.0, "session_start": n, "last_break": n,
-            "seen": {}, "quests_date": None, "quests_done": [], "break_taken": 0,
-            "generation": 1, "name": None, "form": None, "hatched": False,
-            "version": VERSION, "career": default_career(), "graveyard": []}
+            "happiness": 70.0, "session_start": n, "last_break": n,
+            "seen": {}, "quests_date": None, "quests_done": [], "break_taken": 0}
 
 def load_state():
     s = _load(STATE, default_state())
     for k, v in default_state().items():
         s.setdefault(k, v)
-    for k, v in default_career().items():          # careers grow new counters too
-        s["career"].setdefault(k, v)
-    if not s.get("name"):
-        s["name"] = pick_name(s)
-    s["version"] = VERSION
-    _seed_stage(s)
     return s
 
 def save_state(s):
@@ -284,31 +155,13 @@ def tick(state, repos, now=None):
     """Advance vitals to `now`: decay over elapsed time, then feed from any new
     commits. Returns a list of fired events (e.g. ['commit'] or ['merge'])."""
     now = now or _now()
-    hrs = max(0.0, (now - state["last_seen"]) / 3600.0) * TIME_SCALE
+    hrs = max(0.0, (now - state["last_seen"]) / 3600.0)
 
-    hunger0 = state["hunger"]
-    state["hunger"] = min(100.0, hunger0 + HUNGER_PER_HR * hrs)   # belly empties
+    state["hunger"] = min(100.0, state["hunger"] + HUNGER_PER_HR * hrs)   # belly empties
     belly = 100.0 - state["hunger"]
     pull = min(1.0, COUPLE_PER_HR * hrs)                  # energy & mood drift toward belly:
     state["energy"]    = _clamp(state["energy"] + (belly - state["energy"]) * pull)      # full
     state["happiness"] = _clamp(state["happiness"] + (belly - state["happiness"]) * pull)  # -> up
-
-    # An empty belly is survivable; STAYING empty is not. Health only moves for the
-    # part of the elapsed window the crab was actually starving. Splitting the
-    # window matters because `hrs` can be days after the laptop was shut -- charging
-    # the whole gap as starvation would kill a crab that was fed most of it.
-    # The two halves are applied IN ORDER -- fed first, starving second -- because
-    # they don't commute: draining to 0 and then regenerating would revive a crab
-    # that starved to death partway through the window.
-    to_starve = max(0.0, (STARVE_AT - hunger0) / HUNGER_PER_HR)   # hours until empty
-    starving_hrs = max(0.0, hrs - to_starve)
-    well_hrs = hrs - starving_hrs
-    if well_hrs:
-        state["health"] = min(100.0, state["health"] + HEALTH_REGEN_PER_HR * well_hrs)
-    if starving_hrs:
-        state["health"] = max(0.0, state["health"] - HEALTH_DRAIN_PER_HR * starving_hrs)
-        car = state.setdefault("career", default_career())
-        car["neglect_hours"] = car.get("neglect_hours", 0.0) + starving_hrs
 
     if (now - state["last_seen"]) / 60.0 > IDLE_RESET_MIN:   # came back after a break
         state["session_start"] = now
@@ -317,183 +170,10 @@ def tick(state, repos, now=None):
     state["last_seen"] = now
     return []                              # commits now feed via per-commit gifts
 
-# --- the life cycle: stages, forms, death, rebirth ---------------------------
-# Age gates, in days since `born`. The crab is grandfathered past any gate its
-# existing history already cleared, so upgrading never demotes a long-lived pet.
-LIFE_STAGES = [(0.0, "egg"), (0.25, "baby"), (1.0, "juvenile"), (3.0, "adult")]
-FORM_AGE_DAYS = 7.0                        # when the adult locks into a branch
-ADULT_FORMS = ("architect", "grinder", "gamer", "feral")
-
-NAME_POOL = ["Clawde", "Shelly", "Pinch", "Molt", "Barnacle", "Nipper", "Chowder",
-             "Kelp", "Bisque", "Coral", "Scuttle", "Brine", "Pebble", "Marina"]
-
-def pick_name(state):
-    """A name not already used by this crab's ancestors."""
-    used = {m.get("name") for m in state.get("graveyard", [])}
-    free = [n for n in NAME_POOL if n not in used]
-    return random.choice(free or NAME_POOL)
-
-def age_days(state, now=None):
-    return max(0.0, ((now or _now()) - state.get("born", _now())) / 86400.0)
-
-def branch_scores(career):
-    """How strongly this crab's history points at each adult form."""
-    return {"architect": career.get("prs", 0) * 10 + career.get("commits", 0),
-            "grinder":   career.get("tokens_mtok", 0.0) * 2,
-            "gamer":     career.get("games_played", 0) * 3 + career.get("games_won", 0) * 2,
-            "feral":     career.get("neglect_hours", 0.0) * 0.5}
-
-def choose_form(state):
-    """Lock in the adult form earned by how you coded. Ties break toward
-    architect and away from feral -- neglect should never win a coin flip."""
-    scores = branch_scores(state.get("career", {}))
-    order = {"architect": 3, "grinder": 2, "gamer": 1, "feral": 0}   # tiebreak priority
-    return max(ADULT_FORMS, key=lambda f: (scores.get(f, 0), order[f]))
-
-def life_stage(state, now=None):
-    """The morph key for the crab's current stage. CRAB_STAGE overrides it for QA
-    (you cannot otherwise see the egg without hand-editing state.json)."""
-    override = os.environ.get("CRAB_STAGE")
-    if override:
-        return override
-    age = age_days(state, now)
-    key = "egg"
-    for gate, name in LIFE_STAGES:
-        if age >= gate:
-            key = name
-    if key == "egg" and state.get("hatched"):     # fed early -> hatch early
-        key = "baby"
-    if key == "adult" and age >= FORM_AGE_DAYS:
-        if not state.get("form"):
-            state["form"] = choose_form(state)
-        return state["form"]
-    return key
-
-def molt_soon(state, now=None, window_hours=1.0):
-    """True when the crab is within `window_hours` of its next stage gate, so it
-    can telegraph the change instead of popping a new shape out of nowhere."""
-    age = age_days(state, now)
-    gates = [g for g, _ in LIFE_STAGES if g > 0] + [FORM_AGE_DAYS]
-    nxt = min((g for g in gates if g > age), default=None)
-    return nxt is not None and (nxt - age) * 24.0 <= window_hours
-
-def _seed_stage(state):
-    """Grandfather an existing pet: a crab with real history should not wake up as
-    an egg just because the lifecycle shipped. Anything past the baby gate counts
-    as hatched, and a crab old enough for a form gets one."""
-    if age_days(state) >= LIFE_STAGES[1][0]:
-        state["hatched"] = True
-    if age_days(state) >= FORM_AGE_DAYS and not state.get("form"):
-        state["form"] = choose_form(state)
-
-def is_dead(state):
-    return state.get("health", 100.0) <= 0.0
-
-def memorial(state, now=None, cause="starvation", graduated=False):
-    """Everything that made this generation distinct. Cheap to store, impossible
-    to reconstruct afterwards."""
-    now = now or _now()
-    hoard = hoard_summary(state)
-    return {"gen": state.get("generation", 1), "name": state.get("name") or "?",
-            "born": state.get("born", now), "died": now,
-            "age_days": round(age_days(state, now), 1),
-            "stage": life_stage(state, now), "form": state.get("form"),
-            "hoard_count": hoard.get("count", 0), "hoard_net": hoard.get("net", 0),
-            "by_tier": dict(hoard.get("by_tier", {})),
-            "career": dict(state.get("career", {})), "cause": cause,
-            "version": VERSION, "graduated": graduated}
-
-def bury(state, now=None, cause="starvation"):
-    """Record the crab that just died. Returns the memorial."""
-    m = memorial(state, now, cause)
-    state.setdefault("graveyard", []).append(m)
-    return m
-
-# --- graduation --------------------------------------------------------------
-# Death is what happens TO a crab. Graduation is something you choose: you decide
-# it's had a good run, retire it with honours, and start again. The crab goes to
-# Memory Lane with a 🎓 instead of a ✝, and its record says how it was raised.
-def can_graduate(state, now=None):
-    """(eligible, reason). A crab graduates once it has reached a final form --
-    before that there is nothing to graduate FROM."""
-    stage = life_stage(state, now)
-    if stage in ADULT_FORMS:
-        return True, ""
-    left = max(0.0, FORM_AGE_DAYS - age_days(state, now))
-    if left <= 0:
-        return True, ""
-    unit = f"{left:.1f} days" if left >= 1 else f"{left * 24:.0f} hours"
-    article = "an" if stage[0] in "aeiou" else "a"
-    return False, (f"{state.get('name')} is still {article} {stage} — "
-                   f"{unit} until it can graduate")
-
-def graduate(state, now=None):
-    """Retire the crab honourably and hatch its successor. Returns the memorial."""
-    now = now or _now()
-    m = memorial(state, now, cause="graduated", graduated=True)
-    state.setdefault("graveyard", []).append(m)
-    rebirth(state, now)
-    return m
-
-# Bookkeeping that belongs to YOU and your repos, not to the crab. It has to
-# survive a rebirth or the new crab re-fires everything the old one already
-# handled: today's finished quests celebrate again, PRs you opened last week
-# arrive as fresh gifts, streak milestones throw a second party, and the
-# monotonic all-time token counter dumps one enormous feed into a newborn.
-CARRIES_OVER = ("graveyard", "tokens_seen", "quests_date", "quests_done",
-                "break_taken", "pr_gifted", "pr_cache", "celebrated_ms",
-                "pushed", "tok_today_cache")
-
-def rebirth(state, now=None):
-    """A fresh egg: new name, empty hoard, blank career. Everything in
-    CARRIES_OVER is kept -- see the note there for why each one matters."""
-    now = now or _now()
-    carried = {k: state[k] for k in CARRIES_OVER if k in state}
-    fresh = default_state()
-    fresh["born"] = fresh["last_seen"] = fresh["session_start"] = fresh["last_break"] = now
-    fresh["generation"] = state.get("generation", 1) + 1
-    fresh.update(carried)
-    fresh["name"] = pick_name(fresh)          # after carrying: skips ancestors' names
-    state.clear()
-    state.update(fresh)
-    return state
-
-def backup_state():
-    """Snapshot state.json before an irreversible reset, so `--undo-death` can
-    put a 60-day crab back if the death logic ever misfires."""
-    try:
-        if STATE.exists():
-            _write(PRE_DEATH, STATE.read_text())   # the snapshot is worth as much as the save
-            return True
-    except Exception:
-        pass
-    return False
-
-def restore_state():
-    try:
-        if PRE_DEATH.exists():
-            _write(STATE, PRE_DEATH.read_text())
-            return True
-    except Exception:
-        pass
-    return False
-
-def record_game(state, won):
-    car = state.setdefault("career", default_career())
-    car["games_played"] = car.get("games_played", 0) + 1
-    if won:
-        car["games_won"] = car.get("games_won", 0) + 1
-        state["happiness"] = min(100.0, state["happiness"] + 4)
-
 # --- derived: mood, quests, break -------------------------------------------
 def day_mood(state, today, now=None):
     now = now or _now()
     session_min = (now - state["session_start"]) / 60.0
-    health = state.get("health", 100.0)
-    if health < 20:                        # health outranks everything: it is fatal
-        return "dying"
-    if health < 50:
-        return "sick"
     if state["energy"] < 25 or session_min > MARATHON_MIN:
         return "tired"
     if state["hunger"] > 75:
@@ -547,80 +227,27 @@ def take_break(state, now=None):
 
 # --- presentation: stat lines + speech --------------------------------------
 def _meter(v, n=5):
-    """`n` circles, whole ones only.
-
-    Quarter-filled circles (◔◑◕) were tried and pulled back out: they sit in a
-    part of Geometric Shapes that common terminal fonts do not cover, so the
-    terminal substitutes them from a fallback face and they land visibly off
-    the baseline beside ●○. The bar below is where the fine resolution went.
-    """
     filled = max(0, min(n, round(v / 100.0 * n)))
     return "●" * filled + "○" * (n - filled)
-
-def _bar(pct, width=20):
-    """A block bar: `████████░░░░░░░░░░░░`.
-
-    Block Elements are in every terminal font -- unlike the partial circles --
-    and █/░ each fill a whole cell, so nothing can land half a pixel off. At 20
-    cells one cell is 5%, the resolution the circles could not give.
-    """
-    filled = max(0, min(width, int(round(pct / 100.0 * width))))
-    return "█" * filled + "░" * (width - filled)
 
 def _htok(n):
     if n >= 1e6: return f"{n / 1e6:.1f}M"
     if n >= 1e3: return f"{n / 1e3:.1f}k"
     return str(int(n))
 
-def _ago(age):
-    """Age of a stale reading, short enough for the bar."""
-    if age is None:
-        return "?"
-    if age < 3600:
-        return f"{max(1, int(age // 60))}m"
-    if age < 86400:
-        return f"{int(age // 3600)}h"
-    return f"{int(age // 86400)}d"
-
-def _limit_line(label, win, stale, age=""):
-    """One usage-limit row: `session ●●○○○  31%  ·  resets 10:40 PM`.
-
-    Only Claude Code refreshes the reading, and it can sit unrefreshed for
-    hours, so a stale one still shows its number -- with how old it is instead
-    of a reset time that has probably already passed. Hiding a real number
-    helps nobody; presenting an old one as current would be the dishonest part.
-    """
-    if not win:
-        return f"{label:<7} …"
-    line = f"{label:<7} {_bar(win['pct'])} {win['pct']:3.0f}%"
-    tail = f"{age} ago" if stale else (f"resets {win['resets']}" if win.get("resets") else "")
-    return f"{line}  ·  {tail}" if tail else line
-
-def stat_lines(state, tokens_today, tokens_all=0, limits=None):
-    """l1 = vitals; l2 = tokens used today; l3 = all-time Claude Code tokens;
-    l4 = how much of the current 5-hour session limit is gone, and when it
-    resets.
-
-    ALWAYS returns four lines -- the window's height is measured once at
-    startup, so a stat line that came and went would tear the redraw.
-    """
+def stat_lines(state, today, pr_stats, tokens_today, tokens_all=0):
+    """l1 = vitals; l2 = tokens used today; l3 = today's code stats;
+    l4 = all-time Claude Code tokens."""
     belly = 100 - state["hunger"]
-    health = state.get("health", 100.0)
     l1 = f"mood {_meter(state['happiness'])}  energy {_meter(state['energy'])}  belly {_meter(belly)}"
-    if health < 100:                       # only shown once there's something to worry about
-        l1 += f"  health {_meter(health)}"
     l2 = f"tokens used today  {tokens_today:,}"
-    l3 = f"tokens all-time  {tokens_all:,}"
-    lim = limits or {}
-    stale, age = lim.get("stale", True), _ago(lim.get("age"))
-    # Row 5 is the per-model weekly. Where the account has none, fall back to
-    # the all-models weekly rather than a dead row: the line count is fixed at
-    # startup, so this has to render something, and the label says which it is.
-    model = lim.get("model")
-    scoped = (model["label"], model) if model else ("weekly", lim.get("weekly"))
-    return [l1, l2, l3,
-            _limit_line("session", lim.get("session"), stale, age),
-            _limit_line(scoped[0], scoped[1], stale, age)]
+    n = pr_stats.get("prs", 0)
+    prlabel = f"{n} PR" if n == 1 else f"{n} PRs"
+    c = today.get("commits", 0)
+    clabel = f"{c} commit" if c == 1 else f"{c} commits"
+    l3 = f"today  {today.get('added', 0)} lines  ·  {clabel}  ·  {prlabel}"
+    l4 = f"tokens all-time  {tokens_all:,}"
+    return [l1, l2, l3, l4]
 
 def speech(state, mood, events, fresh_quests, brk, name="kh"):
     if "merge" in events:
@@ -735,8 +362,6 @@ def feed_gift(state, gift):
     state["happiness"] = min(100.0, state["happiness"] + boost)
     state["hunger"]    = max(0.0, state["hunger"] - boost)
     state["energy"]    = min(100.0, state["energy"] + 5)
-    state["health"]    = min(100.0, state.get("health", 100.0) + boost * 0.4)
-    state["hatched"]   = True
 
 TOKENS_FEED_PER_MTOK = 12.0          # belly points gained per 1M Claude Code tokens
 
@@ -750,16 +375,10 @@ def feed_tokens(state, all_tokens):
         return
     delta = max(0, all_tokens - prev)
     if delta:
-        mtok = delta / 1e6
-        boost = mtok * TOKENS_FEED_PER_MTOK
+        boost = (delta / 1e6) * TOKENS_FEED_PER_MTOK
         state["hunger"]    = max(0.0, state["hunger"] - boost)
         state["happiness"] = min(100.0, state["happiness"] + boost * 0.3)
         state["energy"]    = min(100.0, state["energy"] + boost * 0.2)
-        state["health"]    = min(100.0, state.get("health", 100.0) + boost * 0.5)
-        car = state.setdefault("career", default_career())
-        car["tokens_mtok"] = car.get("tokens_mtok", 0.0) + mtok
-        if not state.get("hatched"):        # the first real meal cracks the egg
-            state["hatched"] = True
 
 def gift_speech(gift):
     pr = " (a whole PR!)" if gift["pr"] else ""
