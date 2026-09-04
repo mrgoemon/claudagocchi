@@ -33,11 +33,18 @@ def _sanitize(b):
     return re.sub(rb"\033\]0;[^\007]*\007", b"", b)          # window title
 
 # Fixed timeline (seconds) -- make_video.sh's keyframes assume these.
-PROMPT_HOLD = 1.5      # empty prompt, cursor blinking
+PROMPT_HOLD = 0.5      # one cursor tick, then straight into typing
 TYPE_CPS = 8           # `claude` typed at ~8 chars/sec
 POST_TYPE = 0.6        # beat before "Enter"
 WELCOME_HOLD = 2.2     # the real Claude launch screen on screen
-# crab appears at ~PROMPT_HOLD + 6/TYPE_CPS + POST_TYPE + WELCOME_HOLD ~= 5.1s
+# Measured from a pty capture: first keystroke 0.57s, banner 1.95s, crab 4.78s.
+# The sum of the constants above is only ~4.05 -- replaying the banner and the
+# exec into pixel_crab cost the other ~0.7s -- so make_video.sh anchors on the
+# measured 4.8, not the arithmetic.
+#
+# The prompt used to sit blinking for 1.5s: three ticks of an empty terminal
+# before the video says anything, which is most of the window a muted autoplay
+# gets to earn a scroll.
 
 
 def _out(s):

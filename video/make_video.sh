@@ -15,17 +15,16 @@ FPS=30
 
 # ---- timeline (seconds into the recording) ---------------------------------
 T0=1.0                 # when intro.py started, relative to recording start
-CRAB_T=$(echo "$T0 + 5.1" | bc)      # crab frame appears (intro.py timings)
+CRAB_T=$(echo "$T0 + 4.8" | bc)      # crab frame appears (MEASURED, not summed)
 # 4.0s dead still, two blinks (~0.8s), a hop (~1s), then the line types itself
-# out and lands at ~7.7s -- at which point the whole UI decodes out of 文字化け
-# over 2s. Be fully pulled back before the decode starts so it plays on the
+# out and lands at ~7.7s -- at which point the whole UI corrupts away over 2s. Be fully pulled back before the decode starts so it plays on the
 # full frame rather than cropped.
 ZOUT_START=$(echo "$CRAB_T + 5.4" | bc)
 ZOUT_END=$(echo "$CRAB_T + 7.6" | bc)
 # The decode finishes ~9.7s in and the crab then gets on with its life; hold
 # well past that before the card.
-T_FADE=22              # end-card crossfade starts
-TOTAL=25               # final video length
+T_FADE=21              # end-card crossfade starts
+TOTAL=24               # final video length
 
 # ---- zoom target -----------------------------------------------------------
 ZMAX=3.0               # how tight the zoom-in is
