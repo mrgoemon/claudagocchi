@@ -1301,9 +1301,12 @@ def animate(color=True, fps=10, name="kh"):
             time.sleep(45)
     threading.Thread(target=_token_worker, daemon=True).start()
 
-    # --- plan limits: how much of the session/weekly windows is gone (~15s).
-    # Only a read of Claude Code's cached /usage response, so this is cheap --
-    # and it only moves when Claude Code itself refetches, every 5 min at best.
+    # --- plan limits: how much of the 5-hour session window is gone (~60s).
+    # Each poll asks Claude Code for a fresh reading -- ~1.4s, no tokens. The
+    # poll interval IS the accuracy: nothing here watches for the window to
+    # roll over, it just shows whatever the last answer said, so a reset takes
+    # up to one interval to appear. Read the cache once first, so the very
+    # first frame has numbers rather than a placeholder.
     lim_box = {"v": climits.read()}           # cached first, for an instant frame
     if intro_mode:
         lim_box["v"] = _intro_limits()        # a take shows a made-up session
@@ -1314,7 +1317,7 @@ def animate(color=True, fps=10, name="kh"):
                     lim_box["v"] = climits.current() or lim_box["v"]
                 except Exception:
                     pass
-                time.sleep(120)               # ~1.4s and zero tokens, so poll often
+                time.sleep(60)                # ~1.4s and zero tokens, so poll often
         threading.Thread(target=_limits_worker, daemon=True).start()
 
     # --- session worker: which of your OTHER agent sessions need a human (~2s).
