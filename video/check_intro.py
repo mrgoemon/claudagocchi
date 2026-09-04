@@ -199,7 +199,7 @@ def main():
         ("real token numbers still shown",
          any(re.search(r"tokens used today\s+[1-9]", f) for f in frames)),
         ("session limit and its reset time are on screen",
-         any(re.search(r"session\s+[●○]{5}\s+\d+%\s+·\s+resets\s+\d+:\d\d [AP]M", f)
+         any(re.search(r"session\s+[○◔◑◕●]{5}\s+\d+%\s+·\s+resets\s+\d+:\d\d [AP]M", f)
              for f in frames)),
         ("weekly line is gone", not any("weekly " in f for f in frames)),
         ("git lines are gone", not any("PRs" in f for f in frames)),

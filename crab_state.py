@@ -546,9 +546,21 @@ def take_break(state, now=None):
     state["energy"] = min(100.0, state["energy"] + 15)
 
 # --- presentation: stat lines + speech --------------------------------------
+_METER_STEPS = ("○", "◔", "◑", "◕")      # 0, quarter, half, three-quarter
+
 def _meter(v, n=5):
-    filled = max(0, min(n, round(v / 100.0 * n)))
-    return "●" * filled + "○" * (n - filled)
+    """`n` circles at quarter resolution: ●●◑○○ is 50%.
+
+    Whole dots alone round to the nearest 20%, which is coarse for a number
+    shown next to them -- a session at 22% and one at 38% drew the same bar.
+    Quarters take that to 5%. Always exactly `n` characters wide, all of them
+    single-column, so the stat row's centring does not move as the value does.
+    """
+    quarters = max(0, min(n * 4, int(round(v / 100.0 * n * 4))))
+    full, part = divmod(quarters, 4)
+    if full >= n:
+        return "●" * n
+    return "●" * full + _METER_STEPS[part] + "○" * (n - full - 1)
 
 def _htok(n):
     if n >= 1e6: return f"{n / 1e6:.1f}M"
