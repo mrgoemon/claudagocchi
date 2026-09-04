@@ -120,8 +120,9 @@ def main():
     adult_w = int(subprocess.run(
         [sys.executable, "-c", "import pixel_crab;print(pixel_crab.MORPHS['adult'].w)"],
         capture_output=True, text=True, env=dict(os.environ)).stdout.strip() or 0)
-    # The decode: frames whose title is neither name but half-width katakana.
-    kata = re.compile(r"[\uff66-\uff9d]")
+    # Braille and light-shade are the garble charset and appear nowhere else in
+    # the UI, so their presence in a frame means that frame is mid-corruption.
+    kata = re.compile(r"[\u2801-\u28ff░▐]")
     garbled = [i for i, f in enumerate(frames) if kata.search(f)]
     decode_at = garbled[0] if garbled else len(frames)
     line = "let's start tokenmaxxing \U0001F980"
@@ -158,9 +159,9 @@ def main():
         # It arms on the exact frame the line lands, but the blot starts at a
         # single seeded column with jitter, so the first VISIBLE garble trails
         # that by a frame or two -- which is the effect, not a delay.
-        ("decodes through 文字化け just after the line finishes typing",
+        ("corruption starts just after the line finishes typing",
          decode_at < len(frames) and 0 <= decode_at - typed_at <= 5),
-        ("the decode runs about %.0fs" % FX,
+        ("the corruption runs about %.0fs" % FX,
          abs(len(garbled) - FX * FPS) <= 4),
         ("the old UI survives into it and is eaten gradually",
          any(kata.search(f) and ("/effort" in f or "Opus 5" in f) for f in frames)),

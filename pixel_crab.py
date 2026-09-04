@@ -809,7 +809,7 @@ def _boot_wave(x, ground, fps):
 INTRO_STILL_SEC = 4.0        # the held "screenshot" before the blink
 INTRO_HOPS = 2               # its first move, before it changes what it says
 INTRO_SETTLE_SEC = 1.0       # landing beat, then ordinary crab life resumes
-INTRO_FX_SEC = 2.0           # the 文字化け decode that drops the disguise
+INTRO_FX_SEC = 2.0           # the decay that eats the disguise
 FX_STAGGER = 0.09            # head start between rows, so they don't all go at once
 FX_SPAN = 0.45               # how long the blot takes to reach a row's far end
 FX_HOLD = 0.22               # how long a column stays garbled before it settles
@@ -829,13 +829,17 @@ def _intro_limits():
                         "resets": resets.strftime("%-I:%M %p")},
             "weekly": None, "age": 0.0, "stale": False}
 
-# Half-width katakana and ASCII punctuation, and deliberately nothing else.
-# Both are one column wide by `_vlen` AND in any real terminal, and the top
-# border is measured with len() rather than _vlen (see render_window), so a
-# glyph whose two measurements disagree jags the box. That rules out ▒▓█, the
-# box-drawing set and ◆※ -- all "ambiguous" width, scored 1 here and drawn 2 in
-# a CJK locale, which would break the frame exactly where no test can see it.
-_GARBLE = [chr(c) for c in range(0xFF66, 0xFF9E)] + list("!<>/\\|=+*#%&$@~^_")
+# Braille dots, light shade, and ASCII punctuation -- deliberately nothing else.
+# Every one is a single column by `_vlen` AND in any real terminal. That second
+# half matters: the top border is measured with len() rather than _vlen (see
+# render_window), so a glyph whose two measurements disagree jags the box. It
+# rules out ▒▓█, the box-drawing set and ◆※ -- all "ambiguous" width, scored 1
+# here and drawn 2 in a CJK locale, breaking the frame exactly where no test
+# can see it. The Braille block gives the dense flicker that sells the decay;
+# none of these glyphs appear anywhere else in the UI, so a garbled column is
+# unmistakable (the sprite only ever uses ▗▖▘▝).
+_GARBLE = ([chr(c) for c in range(0x2801, 0x2900)] + list("░▐")
+           + list("!<>/\\|=+*#%&$@~^_?;:."))
 
 def _infest_schedule(width, start, span, hold):
     """Per-column (infect_at, resolve_at), blooming out from one random column.
@@ -1194,7 +1198,7 @@ def animate(color=True, fps=10, name="kh"):
     # moving under its own steam -- the vitals are the last thing to give the
     # disguise away, well after the title has already changed.
     intro_scripted = False
-    fx_left, fx_was, fx_sched = 0, [], []   # the 文字化け infestation, armed below
+    fx_left, fx_was, fx_sched = 0, [], []   # the corruption effect, armed below
     if os.environ.get("CRAB_INTRO"):
         intro_mode, intro_stats, intro_scripted = True, _intro_stats(), True
         wake = _wake_scene(pos["x"], ground, fps)
@@ -1456,7 +1460,7 @@ def animate(color=True, fps=10, name="kh"):
                 # The launch-video still passes for a Claude session -- Claude's
                 # title, Claude's status bar, a greeting that is already
                 # finished -- and holds it all the way through the wake. The
-                # disguise then comes off in one go, as 文字化け, the instant the
+                # disguise then comes off in one go, corrupted away, the instant the
                 # crab finishes saying its line (armed below, once the
                 # typewriter has laid down the last character).
                 disguised = intro_scripted
