@@ -134,9 +134,10 @@ def main():
     adult_w = int(subprocess.run(
         [sys.executable, "-c", "import pixel_crab;print(pixel_crab.MORPHS['adult'].w)"],
         capture_output=True, text=True, env=dict(os.environ)).stdout.strip() or 0)
-    # Braille and light-shade are the garble charset and appear nowhere else in
-    # the UI, so their presence in a frame means that frame is mid-corruption.
-    kata = re.compile(r"[\u2801-\u28ff░▐]")
+    # Braille is the garble charset and appears nowhere else in the UI, so its
+    # presence in a frame means that frame is mid-corruption. (░ is NOT usable
+    # here -- the session bar draws with it.)
+    kata = re.compile(r"[\u2801-\u28ff]")
     garbled = [i for i, f in enumerate(frames) if kata.search(f)]
     decode_at = garbled[0] if garbled else len(frames)
     line = "let's start tokenmaxxing \U0001F980"
@@ -199,7 +200,7 @@ def main():
         ("real token numbers still shown",
          any(re.search(r"tokens used today\s+[1-9]", f) for f in frames)),
         ("session limit and its reset time are on screen",
-         any(re.search(r"session\s+[○◔◑◕●]{5}\s+\d+%\s+·\s+resets\s+\d+:\d\d [AP]M", f)
+         any(re.search(r"session\s+[█░]{20}\s+\d+%\s+·\s+resets\s+\d+:\d\d [AP]M", f)
              for f in frames)),
         ("weekly line is gone", not any("weekly " in f for f in frames)),
         ("git lines are gone", not any("PRs" in f for f in frames)),

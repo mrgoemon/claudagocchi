@@ -835,10 +835,13 @@ def _intro_limits():
 # render_window), so a glyph whose two measurements disagree jags the box. It
 # rules out ▒▓█, the box-drawing set and ◆※ -- all "ambiguous" width, scored 1
 # here and drawn 2 in a CJK locale, breaking the frame exactly where no test
-# can see it. The Braille block gives the dense flicker that sells the decay;
-# none of these glyphs appear anywhere else in the UI, so a garbled column is
-# unmistakable (the sprite only ever uses ▗▖▘▝).
-_GARBLE = ([chr(c) for c in range(0x2801, 0x2900)] + list("░▐")
+# can see it. The Braille block gives the dense flicker that sells the decay.
+#
+# Braille and nothing else from the block ranges: ░ used to be in here too,
+# until the session bar started drawing with it and every frame containing a
+# bar read as corrupted. These glyphs appear nowhere else in the UI, which is
+# what lets a test tell a garbled column from a real one -- keep it that way.
+_GARBLE = ([chr(c) for c in range(0x2801, 0x2900)]
            + list("!<>/\\|=+*#%&$@~^_?;:."))
 
 def _infest_schedule(width, start, span, hold):
@@ -1311,7 +1314,7 @@ def animate(color=True, fps=10, name="kh"):
                     lim_box["v"] = climits.current() or lim_box["v"]
                 except Exception:
                     pass
-                time.sleep(600)               # a ~1.4s spawn; ten minutes is plenty
+                time.sleep(120)               # ~1.4s and zero tokens, so poll often
         threading.Thread(target=_limits_worker, daemon=True).start()
 
     # --- session worker: which of your OTHER agent sessions need a human (~2s).

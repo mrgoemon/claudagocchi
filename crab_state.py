@@ -546,21 +546,26 @@ def take_break(state, now=None):
     state["energy"] = min(100.0, state["energy"] + 15)
 
 # --- presentation: stat lines + speech --------------------------------------
-_METER_STEPS = ("○", "◔", "◑", "◕")      # 0, quarter, half, three-quarter
-
 def _meter(v, n=5):
-    """`n` circles at quarter resolution: ●●◑○○ is 50%.
+    """`n` circles, whole ones only.
 
-    Whole dots alone round to the nearest 20%, which is coarse for a number
-    shown next to them -- a session at 22% and one at 38% drew the same bar.
-    Quarters take that to 5%. Always exactly `n` characters wide, all of them
-    single-column, so the stat row's centring does not move as the value does.
+    Quarter-filled circles (◔◑◕) were tried and pulled back out: they sit in a
+    part of Geometric Shapes that common terminal fonts do not cover, so the
+    terminal substitutes them from a fallback face and they land visibly off
+    the baseline beside ●○. The bar below is where the fine resolution went.
     """
-    quarters = max(0, min(n * 4, int(round(v / 100.0 * n * 4))))
-    full, part = divmod(quarters, 4)
-    if full >= n:
-        return "●" * n
-    return "●" * full + _METER_STEPS[part] + "○" * (n - full - 1)
+    filled = max(0, min(n, round(v / 100.0 * n)))
+    return "●" * filled + "○" * (n - filled)
+
+def _bar(pct, width=20):
+    """A block bar: `████████░░░░░░░░░░░░`.
+
+    Block Elements are in every terminal font -- unlike the partial circles --
+    and █/░ each fill a whole cell, so nothing can land half a pixel off. At 20
+    cells one cell is 5%, the resolution the circles could not give.
+    """
+    filled = max(0, min(width, int(round(pct / 100.0 * width))))
+    return "█" * filled + "░" * (width - filled)
 
 def _htok(n):
     if n >= 1e6: return f"{n / 1e6:.1f}M"
@@ -587,7 +592,7 @@ def _limit_line(label, win, stale, age=""):
     """
     if not win:
         return f"{label:<7} …"
-    line = f"{label:<7} {_meter(win['pct'])} {win['pct']:3.0f}%"
+    line = f"{label:<7} {_bar(win['pct'])} {win['pct']:3.0f}%"
     tail = f"{age} ago" if stale else (f"resets {win['resets']}" if win.get("resets") else "")
     return f"{line}  ·  {tail}" if tail else line
 
