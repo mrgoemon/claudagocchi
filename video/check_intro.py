@@ -19,6 +19,8 @@ WIDTH = 99             # every box row, garble included
 FX = 2.0               # length of the decode
 EYE = "38;2;24;24;28"          # fg(EYE): present only when the eyes are drawn
 STILL = 4.0            # motionless "screenshot" before the blinks
+HOPS = 2               # INTRO_HOPS
+SETTLE = 1.0           # INTRO_SETTLE_SEC
 FPS = 10
 
 
@@ -110,6 +112,18 @@ def main():
     # Where Claude's status bar gives way to the crab's own vitals.
     stats_at = next((i for i, f in enumerate(frames) if "/effort" not in f
                      and i > still_n), len(frames))
+    def crab_x(fr):          # leftmost column the crab occupies
+        rows = [re.sub(r"\033\[[0-9;]*[A-Za-z]", "", l).strip("│\r")
+                for l in fr.split("\n")[4:9]]
+        cols = [i for r in rows for i, ch in enumerate(r) if ch != " "]
+        return min(cols) if cols else None
+
+    # The held pause ends after the still, both blinks, the hops and the settle;
+    # the crab should then walk, which is the only thing that moves it sideways.
+    settled = still_n + 8 + 5 * HOPS + int(FPS * SETTLE)
+    walk_win = [crab_x(f) for f in frames[settled - 4:settled + int(FPS * 2.5)]]
+    walk_win = [x for x in walk_win if x is not None]
+
     def sprite_w(fr):        # how many columns the crab spans
         rows = [re.sub(r"\033\[[0-9;]*[A-Za-z]", "", l).strip("│\r")
                 for l in fr.split("\n")[4:9]]
@@ -138,6 +152,8 @@ def main():
         ("frame height constant", codes == [FRAME_H]),
         ("always the adult crab, never the fresh-save egg",
          sprite_w(frames[5]) == adult_w),
+        ("walks off as its first move after the pause",
+         bool(walk_win) and max(walk_win) - min(walk_win) >= 4),
         ("hops before changing its line",
          switch > still_n + 8 and len({stage(f) for f in hop_win}) > 1),
         ("eyes open for the whole still", all(hold)),

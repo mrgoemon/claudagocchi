@@ -906,6 +906,28 @@ def _wake_scene(x, ground, fps):
             still * int(span * INTRO_SETTLE_SEC))             # then _boot_wave
 
 
+def _walk_scene(pos, ground, fps, inner, morph, seconds=2.0):
+    """CRAB_INTRO: the crab's first act is to walk off, not wave.
+
+    Mirrors the `saunter` behaviour -- same leg cycle, same one column every
+    other frame, gaze the way it is heading -- and writes back through `pos`,
+    so when the behaviour generator takes over it carries on from where this
+    left the crab instead of teleporting back.
+    """
+    lo, hi = crab_bounds(inner, HOARD_CAP + 1, morph)
+    d = 1 if pos["x"] < (lo + hi) // 2 else -1     # head for the roomier side
+    out = []
+    for i in range(int(fps * seconds)):
+        if i % 2 == 0:
+            step = pos["x"] + d
+            if step < lo or step > hi:            # wall: turn round and carry on
+                d = -d
+                step = pos["x"] + d
+            pos["x"] = step
+        out.append((pos["x"], ground, pose(hand="down", gaze=d,
+                                           leg="stepA" if i % 2 else "stepB"), None))
+    return out
+
 def _wake_beats(fps):
     """(frames of disguise, frames the opening greeting stays up).
 
@@ -1202,7 +1224,10 @@ def animate(color=True, fps=10, name="kh"):
     if os.environ.get("CRAB_INTRO"):
         intro_mode, intro_stats, intro_scripted = True, _intro_stats(), True
         wake = _wake_scene(pos["x"], ground, fps)
-        pending = wake + pending
+        # Walk instead of the launch wave: after the held pause the first thing
+        # the crab does is set off. Built after the wake so it starts from the
+        # column the wake ended on.
+        pending = wake + _walk_scene(pos, ground, fps, inner, morph)
         # Counted in FRAMES, not seconds: a frame costs a little more than
         # 1/fps, so a wall-clock deadline expires while the still is still on
         # screen and the first line starts typing early. The disguise lasts
