@@ -1,0 +1,4 @@
+#!/bin/sh
+# Launch Claudagocchi. No args -> live animation; pass-through otherwise.
+DIR="$(cd "$(dirname "$0")" && pwd)"
+exec python3 "$DIR/pixel_crab.py" "${@:---animate}"
