@@ -582,8 +582,12 @@ def _ago(age):
         return f"{int(age // 3600)}h"
     return f"{int(age // 86400)}d"
 
-def _limit_line(label, win, stale, age=""):
-    """One usage-limit row: `session ●●○○○  31%  ·  resets 10:40 PM`.
+def _limit_line(label, win, stale, age="", pad=7):
+    """One usage-limit row: `session ████░░░░  31%  ·  resets 10:40 PM`.
+
+    `pad` is the label column, passed in rather than fixed: the model row's
+    label comes from the server ("fable 5.1", "sonnet") and a label longer than
+    this one's would start its bar further right than the row above it.
 
     Only Claude Code refreshes the reading, and it can sit unrefreshed for
     hours, so a stale one still shows its number -- with how old it is instead
@@ -591,8 +595,8 @@ def _limit_line(label, win, stale, age=""):
     helps nobody; presenting an old one as current would be the dishonest part.
     """
     if not win:
-        return f"{label:<7} …"
-    line = f"{label:<7} {_bar(win['pct'])} {win['pct']:3.0f}%"
+        return f"{label:<{pad}} …"
+    line = f"{label:<{pad}} {_bar(win['pct'])} {win['pct']:3.0f}%"
     tail = f"{age} ago" if stale else (f"resets {win['resets']}" if win.get("resets") else "")
     return f"{line}  ·  {tail}" if tail else line
 
@@ -618,9 +622,10 @@ def stat_lines(state, tokens_today, tokens_all=0, limits=None):
     # startup, so this has to render something, and the label says which it is.
     model = lim.get("model")
     scoped = (model["label"], model) if model else ("weekly", lim.get("weekly"))
+    pad = max(len("session"), len(scoped[0]))     # keep both bars in one column
     return [l1, l2, l3,
-            _limit_line("session", lim.get("session"), stale, age),
-            _limit_line(scoped[0], scoped[1], stale, age)]
+            _limit_line("session", lim.get("session"), stale, age, pad),
+            _limit_line(scoped[0], scoped[1], stale, age, pad)]
 
 def speech(state, mood, events, fresh_quests, brk, name="kh"):
     if "merge" in events:

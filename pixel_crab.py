@@ -305,7 +305,7 @@ def _intro_stats():
     stay the same length as STATS -- the redraw height is measured from that.
     """
     cwd = os.getcwd().replace(os.path.expanduser("~"), "~", 1)
-    return ["Opus 5 (1M context) with medium effort · Claude Max", cwd, "",
+    return ["Fable 5.1 (1M context) with medium effort · Claude Max", cwd, "",
             "auto mode on (shift+tab to cycle) · ← for agents",
             "◐ medium · /effort · /rc"]
 
@@ -829,7 +829,7 @@ def _intro_limits():
     week = datetime.datetime.now() + datetime.timedelta(days=random.randint(2, 5))
     return {"session": {"pct": float(random.randint(28, 61)),
                         "resets": resets.strftime("%-I:%M %p")},
-            "model": {"label": "fable", "pct": float(random.randint(18, 47)),
+            "model": {"label": "fable 5.1", "pct": float(random.randint(18, 47)),
                       "resets": week.strftime("%a")},
             "weekly": None, "age": 0.0, "stale": False}
 

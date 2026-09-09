@@ -8,6 +8,7 @@ import os
 import pty
 import re
 import select
+import shutil
 import signal
 import subprocess
 import sys
@@ -51,6 +52,12 @@ def main():
     os.environ["CRAB_INTRO"] = "1"
     # Same isolation intro.py uses -- the point is to prove it holds.
     demo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demo-save")
+    # Wipe it exactly as intro.py does. Without this the save accumulates
+    # across runs, and once a crab dies in there the headstone is drawn at
+    # column 0 -- which pins the "leftmost thing on the stage" that the sprite
+    # and walk checks measure, so the crab reads as 53 columns wide and never
+    # moving. A check of the demo has to start from the demo's own clean slate.
+    shutil.rmtree(demo, ignore_errors=True)
     os.environ["CRAB_SAVE_DIR"] = demo
     os.environ["CRAB_STAGE"] = "adult"
     paths = save_paths()
@@ -203,7 +210,7 @@ def main():
          any(re.search(r"session\s+[█░]{20}\s+\d+%\s+·\s+resets\s+\d+:\d\d [AP]M", f)
              for f in frames)),
         ("the per-model weekly bar is on screen",
-         any(re.search(r"fable\s+[█░]{20}\s+\d+%", f) for f in frames)),
+         any(re.search(r"fable[\d. ]*\s[█░]{20}\s+\d+%", f) for f in frames)),
         ("git lines are gone", not any("PRs" in f for f in frames)),
         ("no traceback", "Traceback" not in text),
     ]
