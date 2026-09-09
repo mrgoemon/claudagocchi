@@ -829,7 +829,7 @@ def _intro_limits():
     week = datetime.datetime.now() + datetime.timedelta(days=random.randint(2, 5))
     return {"session": {"pct": float(random.randint(28, 61)),
                         "resets": resets.strftime("%-I:%M %p")},
-            "model": {"label": "fable 5.1", "pct": float(random.randint(18, 47)),
+            "model": {"label": "fable", "pct": float(random.randint(18, 47)),
                       "resets": week.strftime("%a")},
             "weekly": None, "age": 0.0, "stale": False}
 

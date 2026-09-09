@@ -622,10 +622,19 @@ def stat_lines(state, tokens_today, tokens_all=0, limits=None):
     # startup, so this has to render something, and the label says which it is.
     model = lim.get("model")
     scoped = (model["label"], model) if model else ("weekly", lim.get("weekly"))
-    pad = max(len("session"), len(scoped[0]))     # keep both bars in one column
-    return [l1, l2, l3,
-            _limit_line("session", lim.get("session"), stale, age, pad),
+    pad = max(len("session"), len(scoped[0]))     # same label column...
+    rows = [_limit_line("session", lim.get("session"), stale, age, pad),
             _limit_line(scoped[0], scoped[1], stale, age, pad)]
+    # ...and the same LENGTH, which is what actually lines the bars up on
+    # screen: every stat row is centred on its own, so two rows of different
+    # widths get different left offsets and the bars drift apart even though
+    # the labels are padded identically. Equal lengths centre identically.
+    # len() is the visible width here: these rows are only bar glyphs, digits,
+    # ASCII and · … -- every one a single column. (_vlen lives in pixel_crab,
+    # which cannot be imported from here.)
+    wide = max(len(r) for r in rows)
+    rows = [r + " " * (wide - len(r)) for r in rows]
+    return [l1, l2, l3] + rows
 
 def speech(state, mood, events, fresh_quests, brk, name="kh"):
     if "merge" in events:
